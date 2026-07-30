@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MTR ROUTE MAP V2</title>
+    <title>MTR 路線図・駅マップ可視化ツール</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root {
@@ -388,9 +388,9 @@
                 <div class="ridership-panel" id="ridership-panel" style="display:none;">
                     <label>スプレッドシートID</label>
                     <input type="text" id="ridership-sheet-id" placeholder="スプレッドシートのID">
-                    <label>gid（タブID）</label>
-                    <input type="text" id="ridership-gid" placeholder="例: 1591757481">
-                    <label>GAS Web App URL（直接取得できない場合の代替・任意）</label>
+                    <label>gid（複数指定はカンマ区切り: 例 1591757481, 218317062）</label>
+                    <input type="text" id="ridership-gid" placeholder="例: 1591757481, 12345678">
+                    <label>GAS Web App URL（任意・直取得不可の場合）</label>
                     <input type="text" id="ridership-gas-url" placeholder="https://script.google.com/macros/s/.../exec">
                     <button class="search-btn" onclick="loadRidershipData()">🔄 利用者データを読み込む</button>
                     <div id="ridership-status" style="font-size:0.72rem; color:#718096; margin-top:6px; line-height:1.5;"></div>
@@ -436,23 +436,23 @@
         let lastExcludeQuery = ""; // 系統除外内検索クエリを保持
         let virtualHighlightLayers = []; // 同名駅・接続駅の徒歩乗換を示す一時的な破線レイヤー
 
-        // 同名駅・connections定義の徒歩乗換にかかる仮想コスト（実距離に依存しない固定値）
+        // 同名駅・connections定義の徒歩乗換にかかる仮想コスト
         const VIRTUAL_TRANSFER_COST = { sameName: 900, connection: 400 };
 
         // ── 利用者データ（Googleスプレッドシート連携）関連 ──
         const RIDERSHIP_DEFAULT_SHEET_ID = '17Q0-Q7LynBNk89kttIWdOVTD-ktQaL_ItM91vgBpUhE';
-        const RIDERSHIP_DEFAULT_GID = '1591757481';
+        const RIDERSHIP_DEFAULT_GID = '1591757481, 218317062';
         let ridershipMap = {}; // 駅名(コード除去後) -> {yomi, riders, grade, constant, country}
 
         // ── 除外系統設定の永続化 ──
         function saveExcludedRoutes() {
-            try { localStorage.setItem('mtr_excluded_routes', JSON.stringify([...excludedRoutes])); } catch (e) { /* no-op */ }
+            try { localStorage.setItem('mtr_excluded_routes', JSON.stringify([...excludedRoutes])); } catch (e) { }
         }
         function loadExcludedRoutes() {
             try {
                 const raw = localStorage.getItem('mtr_excluded_routes');
                 if (raw) { excludedRoutes = new Set(JSON.parse(raw)); }
-            } catch (e) { /* no-op */ }
+            } catch (e) { }
         }
         loadExcludedRoutes();
 
@@ -479,34 +479,36 @@
         initMap();
         map.setView([0, 0], 0);
 
+        // ── 自動フェッチ & GitHub Pages フォールバック機能 ──
         async function loadDataAuto() {
             const statusEl = document.getElementById('connection-status');
-            const urls = [
-                'http://localhost:8888/data',
-                'http://localhost:18888/data',
-                'data.json'
+            const targets = [
+                { url: 'http://localhost:8888/data', label: 'Localhost (8888)' },
+                { url: 'http://localhost:18888/data', label: 'Localhost (18888)' },
+                { url: 'data.json', label: 'GitHub Pages (data.json)' },
+                { url: './data.json', label: 'リポジトリルート (./data.json)' }
             ];
 
-            for (let url of urls) {
+            for (let t of targets) {
                 try {
-                    let res = await fetch(url, { method: 'GET', mode: 'cors' });
+                    let res = await fetch(t.url, { method: 'GET', mode: 'cors' });
                     if (res.ok) {
                         let data = await res.json();
-                        statusEl.innerHTML = `✅ 📡 正常に同期しました`;
+                        statusEl.innerHTML = `✅ 📡 正常に同期しました (${t.label})`;
                         statusEl.style.background = "#e6fffa"; statusEl.style.color = "#234e52";
                         renderMtrMap(data);
                         return;
                     }
                 } catch (e) {
-                    console.warn(`Fetch fallback matching failed for: ${url}`);
+                    console.warn(`Fetch fallback matching failed for: ${t.url}`);
                 }
             }
 
             statusEl.innerHTML = `
-            <div style="font-weight: bold; color: #e53e3e;">📡 自動同期を待機中...</div>
-            <div style="font-size: 11px; color: #718096; margin-top:2px;">手動で data.json を読み込むこともできます。</div>
-            <button class="status-retry-btn" onclick="loadDataAuto()">再接続を試行</button>
-        `;
+                <div style="font-weight: bold; color: #e53e3e;">📡 自動同期を待機中...</div>
+                <div style="font-size: 11px; color: #718096; margin-top:2px;">マイクラ非接続時は手動で data.json を読み込めます。</div>
+                <button class="status-retry-btn" onclick="loadDataAuto()">再接続を試行</button>
+            `;
             statusEl.style.background = "#fff5f5"; statusEl.style.color = "#9b2c2c";
         }
 
@@ -550,14 +552,12 @@
             return { primary: nameParts[0] || 'Unknown', sub: nameParts.slice(1).join(' / ') + (parts[1] ? ` (${parts[1].replace(/\|/g, ' → ')})` : '') };
         }
 
-        // ── 利用者データ（Googleスプレッドシート連携） ──
+        // ── 利用者データ（複数シート対応） ──
 
-        // 駅名先頭の路線コード表記 "[IT702][IT1724]" などを除去する
         function stripStationCode(name) {
             return (name || '').replace(/^(\[[^\]]*\])+/, '').trim();
         }
 
-        // シンプルなCSVパーサー（引用符・カンマ・改行を考慮）
         function parseCSV(text) {
             const rows = [];
             let row = []; let field = ''; let inQuotes = false;
@@ -580,10 +580,10 @@
             return rows;
         }
 
-        // スプレッドシートの行データを取得する。GAS Web App URLが指定されていればそちらを優先。
         async function fetchSheetRows(sheetId, gid, gasUrl) {
             if (gasUrl) {
-                const res = await fetch(gasUrl);
+                const url = gasUrl + (gasUrl.includes('?') ? '&' : '?') + (gid ? 'gid=' + encodeURIComponent(gid) : '');
+                const res = await fetch(url);
                 if (!res.ok) throw new Error('GAS取得失敗: HTTP ' + res.status);
                 const json = await res.json();
                 return json.values || json;
@@ -591,7 +591,7 @@
             if (!sheetId) throw new Error('スプレッドシートIDが未入力です');
             const url = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/gviz/tq?tqx=out:csv${gid ? '&gid=' + encodeURIComponent(gid) : ''}`;
             const res = await fetch(url);
-            if (!res.ok) throw new Error('シート取得失敗: HTTP ' + res.status + '（共有設定が「リンクを知っている全員が閲覧可」になっているかご確認ください）');
+            if (!res.ok) throw new Error('シート取得失敗: HTTP ' + res.status);
             const text = await res.text();
             return parseCSV(text);
         }
@@ -604,6 +604,7 @@
             btn.textContent = willShow ? '📊 利用者データ連携 ▴' : '📊 利用者データ連携 ▾';
         }
 
+        // 複数シート (gid) 対応版ロード処理
         async function loadRidershipData() {
             const sheetIdInput = document.getElementById('ridership-sheet-id');
             const gidInput = document.getElementById('ridership-gid');
@@ -611,7 +612,7 @@
             const statusEl = document.getElementById('ridership-status');
 
             const sheetId = (sheetIdInput.value || '').trim();
-            const gid = (gidInput.value || '').trim();
+            const rawGid = (gidInput.value || '').trim();
             const gasUrl = (gasInput.value || '').trim();
 
             if (!sheetId && !gasUrl) {
@@ -620,63 +621,79 @@
             }
 
             try { localStorage.setItem('mtr_ridership_sheet_id', sheetId); } catch (e) { }
-            try { localStorage.setItem('mtr_ridership_gid', gid); } catch (e) { }
+            try { localStorage.setItem('mtr_ridership_gid', rawGid); } catch (e) { }
             try { localStorage.setItem('mtr_ridership_gas_url', gasUrl); } catch (e) { }
 
-            statusEl.textContent = '📡 読み込み中...';
-            try {
-                const rows = await fetchSheetRows(sheetId, gid, gasUrl);
-                if (!rows || rows.length < 2) throw new Error('データが空、または取得できませんでした');
+            statusEl.textContent = '📡 データ読み込み中...';
 
-                const header = rows[0].map(h => (h || '').toString().trim());
-                const wanted = ['駅名', '読み', '定数', '級', '所在国', '利用客'];
-                const colIdx = {};
-                wanted.forEach(key => { colIdx[key] = header.indexOf(key); });
-                if (colIdx['駅名'] === -1) {
-                    throw new Error('「駅名」列が見つかりませんでした。タブ(gid)が「利用客表」系のものか確認してください。');
-                }
+            // カンマ区切りで複数のgidを配列化（空ならデフォルト）
+            let gids = rawGid ? rawGid.split(/[,;\s]+/).filter(Boolean) : [RIDERSHIP_DEFAULT_GID];
 
-                const map = {};
-                for (let r = 1; r < rows.length; r++) {
-                    const row = rows[r];
-                    const name = (row[colIdx['駅名']] || '').toString().trim();
-                    if (!name) continue;
-                    map[name] = {
-                        yomi: colIdx['読み'] >= 0 ? (row[colIdx['読み']] || '').toString().trim() : '',
-                        constant: colIdx['定数'] >= 0 ? (row[colIdx['定数']] || '').toString().trim() : '',
-                        grade: colIdx['級'] >= 0 ? (row[colIdx['級']] || '').toString().trim() : '',
-                        country: colIdx['所在国'] >= 0 ? (row[colIdx['所在国']] || '').toString().trim() : '',
-                        riders: colIdx['利用客'] >= 0 ? (row[colIdx['利用客']] || '').toString().trim() : ''
-                    };
-                }
+            let combinedMap = {};
+            let successGidCount = 0;
+            let lastError = null;
 
-                ridershipMap = map;
+            for (let g of gids) {
                 try {
-                    localStorage.setItem('mtr_ridership_cache', JSON.stringify({ map, savedAt: Date.now(), sheetId, gid }));
-                } catch (e) { /* 容量超過などは無視 */ }
+                    const rows = await fetchSheetRows(sheetId, g, gasUrl);
+                    if (!rows || rows.length < 2) continue;
 
-                statusEl.textContent = `✅ ${Object.keys(map).length}駅分の利用者データを読み込みました`;
+                    const header = rows[0].map(h => (h || '').toString().trim());
+                    const colIdx = {
+                        '駅名': header.indexOf('駅名'),
+                        '読み': header.indexOf('読み'),
+                        '定数': header.indexOf('定数'),
+                        '級': header.indexOf('級'),
+                        '所在国': header.indexOf('所在国'),
+                        '利用客': header.indexOf('利用客')
+                    };
+                    if (colIdx['駅名'] === -1) continue;
+
+                    for (let r = 1; r < rows.length; r++) {
+                        const row = rows[r];
+                        const name = (row[colIdx['駅名']] || '').toString().trim();
+                        if (!name) continue;
+                        combinedMap[name] = {
+                            yomi: colIdx['読み'] >= 0 ? (row[colIdx['読み']] || '').toString().trim() : '',
+                            constant: colIdx['定数'] >= 0 ? (row[colIdx['定数']] || '').toString().trim() : '',
+                            grade: colIdx['級'] >= 0 ? (row[colIdx['級']] || '').toString().trim() : '',
+                            country: colIdx['所在国'] >= 0 ? (row[colIdx['所在国']] || '').toString().trim() : '',
+                            riders: colIdx['利用客'] >= 0 ? (row[colIdx['利用客']] || '').toString().trim() : ''
+                        };
+                    }
+                    successGidCount++;
+                } catch (err) {
+                    console.warn(`gid (${g}) の取得失敗:`, err);
+                    lastError = err;
+                }
+            }
+
+            if (Object.keys(combinedMap).length > 0) {
+                ridershipMap = combinedMap;
+                try {
+                    localStorage.setItem('mtr_ridership_cache', JSON.stringify({ map: ridershipMap, savedAt: Date.now(), sheetId, gid: rawGid }));
+                } catch (e) { }
+
+                statusEl.textContent = `✅ ${successGidCount}個のシートから計 ${Object.keys(ridershipMap).length} 駅分の利用者データを取得しました`;
                 updateSidebarList();
-            } catch (err) {
-                let msg = `❌ 読み込み失敗: ${err.message}`;
-                statusEl.innerHTML = msg + '<br><span style="font-size:0.68rem;">直接取得できない場合は、下記の手順でGASプロキシを設置しURLを入力してください。</span>';
+            } else {
+                let msg = `❌ 読み込み失敗: ${lastError ? lastError.message : 'データが見つかりませんでした'}`;
+                statusEl.innerHTML = msg;
 
-                // フォールバック：以前取得できていたキャッシュがあれば使用
                 try {
                     const cacheRaw = localStorage.getItem('mtr_ridership_cache');
                     if (cacheRaw) {
                         const cache = JSON.parse(cacheRaw);
                         if (cache && cache.map) {
                             ridershipMap = cache.map;
-                            statusEl.innerHTML += `<br>📦 前回取得済みのキャッシュ（${Object.keys(ridershipMap).length}駅分）を代わりに使用しています`;
+                            statusEl.innerHTML += `<br>📦 キャッシュデータ（${Object.keys(ridershipMap).length}駅分）を適用中`;
                             updateSidebarList();
                         }
                     }
-                } catch (e2) { /* no-op */ }
+                } catch (e2) { }
             }
         }
 
-        // 駅の生名称（"[IT702]黒紺島|Kurokonjima" など）から利用者データを検索する
         function lookupRidership(rawStationName) {
             const primary = parseName(rawStationName).primary;
             const stripped = stripStationCode(primary);
@@ -689,7 +706,6 @@
             return n.toLocaleString('ja-JP');
         }
 
-        // 一致する利用者データがあれば表示用HTMLを返す。無ければ空文字。
         function buildRidershipHtml(rawStationName) {
             const info = lookupRidership(rawStationName);
             if (!info) return '';
@@ -702,7 +718,6 @@
             </div>`;
         }
 
-        // ページ読み込み時：設定値を復元し、可能であれば自動で利用者データを取得する
         function initRidershipPanel() {
             const sheetIdInput = document.getElementById('ridership-sheet-id');
             const gidInput = document.getElementById('ridership-gid');
@@ -718,19 +733,17 @@
             gidInput.value = savedGid || RIDERSHIP_DEFAULT_GID;
             gasInput.value = savedGasUrl || '';
 
-            // 先にキャッシュがあれば即時反映（オフラインでも一覧に反映されるように）
             try {
                 const cacheRaw = localStorage.getItem('mtr_ridership_cache');
                 if (cacheRaw) {
                     const cache = JSON.parse(cacheRaw);
                     if (cache && cache.map) {
                         ridershipMap = cache.map;
-                        statusEl.textContent = `📦 キャッシュ済みデータ（${Object.keys(ridershipMap).length}駅分）を表示中。最新化するには読み込みボタンを押してください。`;
+                        statusEl.textContent = `📦 キャッシュ済みデータ（${Object.keys(ridershipMap).length}駅分）を表示中。`;
                     }
                 }
-            } catch (e) { /* no-op */ }
+            } catch (e) { }
 
-            // 続けて最新データの自動取得を試行（失敗してもキャッシュ表示のまま継続）
             loadRidershipData();
         }
         window.addEventListener('DOMContentLoaded', initRidershipPanel);
@@ -875,11 +888,10 @@
                 }
             });
 
-            // ── 同名の別駅どうし、および connections で定義された乗換接続駅どうしを
-            //    徒歩で行き来できるよう、仮想的なグラフ辺を追加する ──
+            // ── 同名の別駅・接続駅間の仮想グラフ構築 ──
             const nameGroups = {};
             for (const id in stations) {
-                if (!globalGraph[id]) continue; // 座標不正などでグラフに存在しない駅は除外
+                if (!globalGraph[id]) continue;
                 const pName = parseName(stations[id].name).primary;
                 if (!nameGroups[pName]) nameGroups[pName] = [];
                 nameGroups[pName].push(id);
@@ -963,14 +975,12 @@
                 for (let edge of neighbors) {
                     const routeNum = edge.route.number || 'UNKNOWN';
 
-                    // 仮想辺（同名駅・接続駅の徒歩乗換）は運休/除外系統の対象外
                     if (!edge.isVirtual && excludedRoutes.has(routeNum)) continue;
 
                     let isTransfer = curr.lastRouteNum !== 'NONE' && curr.lastRouteNum !== routeNum;
 
                     let edgeCost;
                     if (edge.isVirtual) {
-                        // 仮想辺は運賃・速度による重み付けを行わず、固定の徒歩コストのみ
                         edgeCost = edge.realDist;
                     } else {
                         edgeCost = edge.realDist;
@@ -979,7 +989,6 @@
                         } else if (priorityMode === 'time') {
                             edgeCost *= edge.speedWeight;
                         } else if (priorityMode === 'balanced') {
-                            // おすすめモード：特急重視ほど極端ではないが、速い系統を緩やかに優遇
                             edgeCost *= (edge.speedWeight + 1) / 2;
                         }
                     }
@@ -991,7 +1000,6 @@
                         } else if (priorityMode === 'fare') {
                             transferPenalty = 4000;
                         } else if (priorityMode === 'balanced') {
-                            // 乗換回数重視ほど厳しくないが、無闇な乗換は避けるバランス設定
                             transferPenalty = 3000;
                         } else {
                             transferPenalty = 2000;
@@ -1085,7 +1093,6 @@
 
             path.forEach(step => {
                 if (step.route.isVirtual) {
-                    // 同名駅・接続駅どうしの徒歩乗換は破線で地図上に表示する
                     const p1 = globalStationCoords[step.from]; const p2 = globalStationCoords[step.to];
                     if (p1 && p2) {
                         const dashLine = L.polyline([p1, p2], {
@@ -1165,7 +1172,6 @@
             saveExcludedRoutes();
         }
 
-        // 系統リストだけをインタラクティブに再描画する内部関数
         function filterExcludeList(query) {
             lastExcludeQuery = query.toLowerCase();
             const container = document.getElementById('exclude-list-container');
@@ -1185,7 +1191,6 @@
                 const isMatch = dispText.toLowerCase().includes(lastExcludeQuery);
                 const isChecked = excludedRoutes.has(num);
 
-                // 検索にマッチするか、すでにチェックされているものはリストに残す（見失い防止）
                 if (isMatch || isChecked) {
                     excludeHtml += `
                     <label class="exclude-item">
@@ -1238,7 +1243,6 @@
                     <button onclick="executeRouteSearch()" class="search-btn" style="margin-top:8px;">🔍 最適ルート探索を開始</button>
                     <div id="search-results" style="margin-top:16px;"></div>
                 </div>`;
-                // 初回リスト構築を実行
                 filterExcludeList(lastExcludeQuery);
                 return;
             }
