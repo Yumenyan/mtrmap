@@ -388,9 +388,9 @@
                 <div class="ridership-panel" id="ridership-panel" style="display:none;">
                     <label>スプレッドシートID</label>
                     <input type="text" id="ridership-sheet-id" placeholder="スプレッドシートのID">
-                    <label>gid（タブID）</label>
-                    <input type="text" id="ridership-gid" placeholder="例: 1591757481">
-                    <label>GAS Web App URL（直接取得できない場合の代替・任意）</label>
+                    <label>gid（カンマ区切りで複数可 例: 1591757481, 0）</label>
+                    <input type="text" id="ridership-gid" placeholder="例: 1591757481, 0">
+                    <label>GAS Web App URL（任意）</label>
                     <input type="text" id="ridership-gas-url" placeholder="https://script.google.com/macros/s/.../exec">
                     <button class="search-btn" onclick="loadRidershipData()">🔄 利用者データを読み込む</button>
                     <div id="ridership-status" style="font-size:0.72rem; color:#718096; margin-top:6px; line-height:1.5;"></div>
@@ -432,19 +432,18 @@
         let routeFeaturesMap = [];
         let globalGraph = {};
         let globalStationCoords = {};
-        let excludedRoutes = new Set(); // 除外された系統キー（路線名_種別_色）を保持
-        let lastExcludeQuery = ""; // 系統除外内検索クエリを保持
-        let virtualHighlightLayers = []; // 同名駅・接続駅の徒歩乗換を示す一時的な破線レイヤー
+        let excludedRoutes = new Set();
+        let lastExcludeQuery = "";
+        let virtualHighlightLayers = [];
 
-        // 同名駅・connections定義の徒歩乗換にかかる仮想コスト（実距離に依存しない固定値）
-        const VIRTUAL_TRANSFER_COST = { sameName: 900, connection: 400 };
+        // 同名駅・接続駅の徒歩乗換コスト設定（適度な重み）
+        const VIRTUAL_TRANSFER_COST = { sameName: 250, connection: 150 };
 
-        // ── 利用者データ（Googleスプレッドシート連携）関連 ──
+        // 利用者データ関連
         const RIDERSHIP_DEFAULT_SHEET_ID = '17Q0-Q7LynBNk89kttIWdOVTD-ktQaL_ItM91vgBpUhE';
         const RIDERSHIP_DEFAULT_GID = '1591757481';
-        let ridershipMap = {}; // 駅名(コード除去後) -> {yomi, riders, grade, constant, country}
+        let ridershipMap = {};
 
-        // ── 文字列エスケープヘルパー ──
         function escapeHtml(str) {
             if (!str) return '';
             return String(str)
@@ -455,7 +454,7 @@
                 .replace(/'/g, '&#39;');
         }
 
-        // ── 系統を一意に識別するキー（路線名___種別/系統番号___路線色） ──
+        // 路線名 + 種別/系統番号 + カラーで個別に識別
         function getRouteKey(route) {
             if (!route) return 'UNKNOWN';
             const nameInfo = parseName(route.name);
@@ -465,15 +464,14 @@
             return `${primaryName}___${numStr}___${hexColor}`;
         }
 
-        // ── 除外系統設定の永続化 ──
         function saveExcludedRoutes() {
-            try { localStorage.setItem('mtr_excluded_routes', JSON.stringify([...excludedRoutes])); } catch (e) { /* no-op */ }
+            try { localStorage.setItem('mtr_excluded_routes', JSON.stringify([...excludedRoutes])); } catch (e) { }
         }
         function loadExcludedRoutes() {
             try {
                 const raw = localStorage.getItem('mtr_excluded_routes');
                 if (raw) { excludedRoutes = new Set(JSON.parse(raw)); }
-            } catch (e) { /* no-op */ }
+            } catch (e) { }
         }
         loadExcludedRoutes();
 
@@ -502,32 +500,33 @@
 
         async function loadDataAuto() {
             const statusEl = document.getElementById('connection-status');
-            const urls = [
-                'http://localhost:8888/data',
-                'http://localhost:18888/data',
-                'data.json'
+            const targets = [
+                { url: 'http://localhost:8888/data', label: 'Localhost (8888)' },
+                { url: 'http://localhost:18888/data', label: 'Localhost (18888)' },
+                { url: 'data.json', label: 'GitHub Pages (data.json)' },
+                { url: './data.json', label: 'リポジトリルート (./data.json)' }
             ];
 
-            for (let url of urls) {
+            for (let t of targets) {
                 try {
-                    let res = await fetch(url, { method: 'GET', mode: 'cors' });
+                    let res = await fetch(t.url, { method: 'GET', mode: 'cors' });
                     if (res.ok) {
                         let data = await res.json();
-                        statusEl.innerHTML = `✅ 📡 正常に同期しました`;
+                        statusEl.innerHTML = `✅ 📡 正常に同期しました (${t.label})`;
                         statusEl.style.background = "#e6fffa"; statusEl.style.color = "#234e52";
                         renderMtrMap(data);
                         return;
                     }
                 } catch (e) {
-                    console.warn(`Fetch fallback matching failed for: ${url}`);
+                    console.warn(`Fetch fallback matching failed for: ${t.url}`);
                 }
             }
 
             statusEl.innerHTML = `
-            <div style="font-weight: bold; color: #e53e3e;">📡 自動同期を待機中...</div>
-            <div style="font-size: 11px; color: #718096; margin-top:2px;">手動で data.json を読み込むこともできます。</div>
-            <button class="status-retry-btn" onclick="loadDataAuto()">再接続を試行</button>
-        `;
+                <div style="font-weight: bold; color: #e53e3e;">📡 自動同期を待機中...</div>
+                <div style="font-size: 11px; color: #718096; margin-top:2px;">手動で data.json を読み込むこともできます。</div>
+                <button class="status-retry-btn" onclick="loadDataAuto()">再接続を試行</button>
+            `;
             statusEl.style.background = "#fff5f5"; statusEl.style.color = "#9b2c2c";
         }
 
@@ -571,7 +570,6 @@
             return { primary: nameParts[0] || 'Unknown', sub: nameParts.slice(1).join(' / ') + (parts[1] ? ` (${parts[1].replace(/\|/g, ' → ')})` : '') };
         }
 
-        // ── 利用者データ（Googleスプレッドシート連携） ──
         function stripStationCode(name) {
             return (name || '').replace(/^(\[[^\]]*\])+/, '').trim();
         }
@@ -600,7 +598,8 @@
 
         async function fetchSheetRows(sheetId, gid, gasUrl) {
             if (gasUrl) {
-                const res = await fetch(gasUrl);
+                const url = gasUrl + (gasUrl.includes('?') ? '&' : '?') + (gid ? 'gid=' + encodeURIComponent(gid) : '');
+                const res = await fetch(url);
                 if (!res.ok) throw new Error('GAS取得失敗: HTTP ' + res.status);
                 const json = await res.json();
                 return json.values || json;
@@ -608,7 +607,7 @@
             if (!sheetId) throw new Error('スプレッドシートIDが未入力です');
             const url = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/gviz/tq?tqx=out:csv${gid ? '&gid=' + encodeURIComponent(gid) : ''}`;
             const res = await fetch(url);
-            if (!res.ok) throw new Error('シート取得失敗: HTTP ' + res.status + '（共有設定が「リンクを知っている全員が閲覧可」になっているかご確認ください）');
+            if (!res.ok) throw new Error('シート取得失敗: HTTP ' + res.status);
             const text = await res.text();
             return parseCSV(text);
         }
@@ -628,7 +627,7 @@
             const statusEl = document.getElementById('ridership-status');
 
             const sheetId = (sheetIdInput.value || '').trim();
-            const gid = (gidInput.value || '').trim();
+            const rawGid = (gidInput.value || '').trim();
             const gasUrl = (gasInput.value || '').trim();
 
             if (!sheetId && !gasUrl) {
@@ -637,58 +636,72 @@
             }
 
             try { localStorage.setItem('mtr_ridership_sheet_id', sheetId); } catch (e) { }
-            try { localStorage.setItem('mtr_ridership_gid', gid); } catch (e) { }
+            try { localStorage.setItem('mtr_ridership_gid', rawGid); } catch (e) { }
             try { localStorage.setItem('mtr_ridership_gas_url', gasUrl); } catch (e) { }
 
-            statusEl.textContent = '📡 読み込み中...';
-            try {
-                const rows = await fetchSheetRows(sheetId, gid, gasUrl);
-                if (!rows || rows.length < 2) throw new Error('データが空、または取得できませんでした');
+            statusEl.textContent = '📡 データ読み込み中...';
+            let gids = rawGid ? rawGid.split(/[,;\s]+/).filter(Boolean) : [RIDERSHIP_DEFAULT_GID];
 
-                const header = rows[0].map(h => (h || '').toString().trim());
-                const wanted = ['駅名', '読み', '定数', '級', '所在国', '利用客'];
-                const colIdx = {};
-                wanted.forEach(key => { colIdx[key] = header.indexOf(key); });
-                if (colIdx['駅名'] === -1) {
-                    throw new Error('「駅名」列が見つかりませんでした。タブ(gid)が「利用客表」系のものか確認してください。');
-                }
+            let combinedMap = {};
+            let successGidCount = 0;
+            let lastError = null;
 
-                const map = {};
-                for (let r = 1; r < rows.length; r++) {
-                    const row = rows[r];
-                    const name = (row[colIdx['駅名']] || '').toString().trim();
-                    if (!name) continue;
-                    map[name] = {
-                        yomi: colIdx['読み'] >= 0 ? (row[colIdx['読み']] || '').toString().trim() : '',
-                        constant: colIdx['定数'] >= 0 ? (row[colIdx['定数']] || '').toString().trim() : '',
-                        grade: colIdx['級'] >= 0 ? (row[colIdx['級']] || '').toString().trim() : '',
-                        country: colIdx['所在国'] >= 0 ? (row[colIdx['所在国']] || '').toString().trim() : '',
-                        riders: colIdx['利用客'] >= 0 ? (row[colIdx['利用客']] || '').toString().trim() : ''
-                    };
-                }
-
-                ridershipMap = map;
+            for (let g of gids) {
                 try {
-                    localStorage.setItem('mtr_ridership_cache', JSON.stringify({ map, savedAt: Date.now(), sheetId, gid }));
-                } catch (e) { /* 容量超過などは無視 */ }
+                    const rows = await fetchSheetRows(sheetId, g, gasUrl);
+                    if (!rows || rows.length < 2) continue;
 
-                statusEl.textContent = `✅ ${Object.keys(map).length}駅分の利用者データを読み込みました`;
+                    const header = rows[0].map(h => (h || '').toString().trim());
+                    const colIdx = {
+                        '駅名': header.indexOf('駅名'),
+                        '読み': header.indexOf('読み'),
+                        '定数': header.indexOf('定数'),
+                        '級': header.indexOf('級'),
+                        '所在国': header.indexOf('所在国'),
+                        '利用客': header.indexOf('利用客')
+                    };
+                    if (colIdx['駅名'] === -1) continue;
+
+                    for (let r = 1; r < rows.length; r++) {
+                        const row = rows[r];
+                        const name = (row[colIdx['駅名']] || '').toString().trim();
+                        if (!name) continue;
+                        combinedMap[name] = {
+                            yomi: colIdx['読み'] >= 0 ? (row[colIdx['読み']] || '').toString().trim() : '',
+                            constant: colIdx['定数'] >= 0 ? (row[colIdx['定数']] || '').toString().trim() : '',
+                            grade: colIdx['級'] >= 0 ? (row[colIdx['級']] || '').toString().trim() : '',
+                            country: colIdx['所在国'] >= 0 ? (row[colIdx['所在国']] || '').toString().trim() : '',
+                            riders: colIdx['利用客'] >= 0 ? (row[colIdx['利用客']] || '').toString().trim() : ''
+                        };
+                    }
+                    successGidCount++;
+                } catch (err) {
+                    console.warn(`gid (${g}) の取得失敗:`, err);
+                    lastError = err;
+                }
+            }
+
+            if (Object.keys(combinedMap).length > 0) {
+                ridershipMap = combinedMap;
+                try {
+                    localStorage.setItem('mtr_ridership_cache', JSON.stringify({ map: ridershipMap, savedAt: Date.now(), sheetId, gid: rawGid }));
+                } catch (e) { }
+
+                statusEl.textContent = `✅ ${successGidCount}個のシートから計 ${Object.keys(ridershipMap).length} 駅分の利用者データを取得しました`;
                 updateSidebarList();
-            } catch (err) {
-                let msg = `❌ 読み込み失敗: ${err.message}`;
-                statusEl.innerHTML = msg + '<br><span style="font-size:0.68rem;">直接取得できない場合は、下記の手順でGASプロキシを設置しURLを入力してください。</span>';
-
+            } else {
+                statusEl.innerHTML = `❌ 読み込み失敗: ${lastError ? lastError.message : 'データが見つかりませんでした'}`;
                 try {
                     const cacheRaw = localStorage.getItem('mtr_ridership_cache');
                     if (cacheRaw) {
                         const cache = JSON.parse(cacheRaw);
                         if (cache && cache.map) {
                             ridershipMap = cache.map;
-                            statusEl.innerHTML += `<br>📦 前回取得済みのキャッシュ（${Object.keys(ridershipMap).length}駅分）を代わりに使用しています`;
+                            statusEl.innerHTML += `<br>📦 キャッシュデータ（${Object.keys(ridershipMap).length}駅分）を適用中`;
                             updateSidebarList();
                         }
                     }
-                } catch (e2) { /* no-op */ }
+                } catch (e2) { }
             }
         }
 
@@ -737,39 +750,56 @@
                     const cache = JSON.parse(cacheRaw);
                     if (cache && cache.map) {
                         ridershipMap = cache.map;
-                        statusEl.textContent = `📦 キャッシュ済みデータ（${Object.keys(ridershipMap).length}駅分）を表示中。最新化するには読み込みボタンを押してください。`;
+                        statusEl.textContent = `📦 キャッシュ済みデータ（${Object.keys(ridershipMap).length}駅分）を表示中。`;
                     }
                 }
-            } catch (e) { /* no-op */ }
+            } catch (e) { }
 
             loadRidershipData();
         }
         window.addEventListener('DOMContentLoaded', initRidershipPanel);
 
-        // ── 種別に応じた速度係数と運賃係数を判定 ──
+        // 種別・系統判定ロジック
         function getRouteProperties(route) {
             const numStr = String(route.number || '').trim();
             const nameStr = String(route.name || '').trim();
-            const combined = (numStr + ' ' + nameStr).toLowerCase();
+
+            const hasKana = /[\u3040-\u309F\u30A0-\u30FF]/.test(numStr) || /[\u3040-\u309F\u30A0-\u30FF]/.test(nameStr);
 
             let speedWeight = 1.0;
             let fareCost = 1.0;
 
-            if (combined.includes('特急') || combined.includes('l.exp') || combined.includes('limited express') || combined.includes('快特') || combined.includes('超特急')) {
-                speedWeight = 0.3; // 最速種別
-                fareCost = 2.5;
-            } else if (combined.includes('急行') || combined.includes('快速') || combined.includes('exp') || combined.includes('rapid')) {
-                speedWeight = 0.5; // 優等種別
-                fareCost = 1.8;
-            } else if (combined.includes('準急') || combined.includes('semi')) {
-                speedWeight = 0.75; // 準優等
-                fareCost = 1.3;
+            if (hasKana) {
+                // 超特急・特急（愛称付き）
+                speedWeight = 0.35;
+                fareCost = 3.0;
             } else {
                 const num = parseInt(numStr, 10);
                 if (!isNaN(num)) {
-                    if (num <= 650) { speedWeight = 1.0; fareCost = 1.0; }
-                    else if (num <= 700) { speedWeight = 0.75; fareCost = 1.5; }
-                    else { speedWeight = 0.35; fareCost = 2.5; }
+                    if (num >= 700) {
+                        // 700番台以上：急行系統
+                        speedWeight = 0.5;
+                        fareCost = 2.0;
+                    } else if (num >= 650) {
+                        // 650番台以上：準急系統
+                        speedWeight = 0.75;
+                        fareCost = 1.5;
+                    } else {
+                        // 650未満：各駅停車・普通
+                        speedWeight = 1.0;
+                        fareCost = 1.0;
+                    }
+                } else {
+                    if (nameStr.includes('超特急') || nameStr.includes('特急') || numStr.includes('特急')) {
+                        speedWeight = 0.35;
+                        fareCost = 3.0;
+                    } else if (nameStr.includes('急行') || nameStr.includes('快速')) {
+                        speedWeight = 0.5;
+                        fareCost = 2.0;
+                    } else if (nameStr.includes('準急')) {
+                        speedWeight = 0.75;
+                        fareCost = 1.5;
+                    }
                 }
             }
             return { speedWeight, fareCost };
@@ -894,7 +924,7 @@
                 }
             });
 
-            // 同名駅・接続駅の仮想徒歩乗換エッジを追加
+            // 同名駅・接続駅の徒歩エッジ追加
             const nameGroups = {};
             for (const id in stations) {
                 if (!globalGraph[id]) continue;
@@ -908,7 +938,7 @@
                 if (!globalGraph[idA] || !globalGraph[idB]) return;
                 const already = globalGraph[idA].some(e => e.isVirtual && e.to === idB && e.virtualType === virtualType);
                 if (already) return;
-                const cost = VIRTUAL_TRANSFER_COST[virtualType] || 500;
+                const cost = VIRTUAL_TRANSFER_COST[virtualType] || 250;
                 const routeMarker = { number: '__VIRTUAL_' + virtualType + '__', name: '', isVirtual: true, virtualType: virtualType };
                 globalGraph[idA].push({ to: idB, route: routeMarker, realDist: cost, speedWeight: 1, fareCost: 1, isVirtual: true, virtualType: virtualType });
             }
@@ -945,21 +975,41 @@
             updateSidebarList();
         }
 
-        // ── 経路探索（ダイクストラ法） ──
-        function findShortestPath(startId, endId, priorityMode) {
+        // 駅名から合致するすべての内部IDを取得するヘルパー関数
+        function getStationIdsByName(targetName) {
+            const stations = (globalData && globalData.stations) ? globalData.stations : {};
+            const ids = [];
+            for (let id in stations) {
+                const pName = parseName(stations[id].name).primary;
+                if (pName === targetName) {
+                    ids.push(id);
+                }
+            }
+            return ids;
+        }
+
+        // ── 改良型ダイクストラ探索（マルチソース＆マルチターゲット対応） ──
+        function findShortestPath(startIds, endIds, priorityMode) {
+            if (!startIds || startIds.length === 0 || !endIds || endIds.length === 0) return null;
+            const endSet = new Set(endIds);
             let distances = {};
             let backtrace = {};
             let pq = [];
 
-            const startKey = startId + '_NONE';
-            distances[startKey] = 0;
-            pq.push({
-                stationId: startId,
-                lastRouteKey: 'NONE',
-                cost: 0,
-                usedRoutes: new Set(),
-                key: startKey
-            });
+            // すべての出発地IDを距離0として初期化（最初から徒歩で別ホームへ行く不自然動作を抑止）
+            for (let startId of startIds) {
+                if (!globalGraph[startId]) continue;
+                const startKey = startId + '_NONE';
+                distances[startKey] = 0;
+                pq.push({
+                    stationId: startId,
+                    lastRouteKey: 'NONE',
+                    lastStationId: null, // Uターン防止用
+                    cost: 0,
+                    usedRoutes: new Set(),
+                    key: startKey
+                });
+            }
 
             let targetReachedKey = null;
             let minTargetCost = Infinity;
@@ -970,7 +1020,8 @@
 
                 if (curr.cost > distances[curr.key]) continue;
 
-                if (curr.stationId === endId) {
+                // 到着地IDのいずれかに到達した時点で判定
+                if (endSet.has(curr.stationId)) {
                     if (curr.cost < minTargetCost) {
                         minTargetCost = curr.cost;
                         targetReachedKey = curr.key;
@@ -980,27 +1031,32 @@
 
                 let neighbors = globalGraph[curr.stationId] || [];
                 for (let edge of neighbors) {
-                    // 系統の識別キーを取得（徒歩は仮想キー）
+                    // 直前にいた駅への即時Uターン・引き返しの防止
+                    if (edge.to === curr.lastStationId) continue;
+
                     const rKey = edge.isVirtual ? edge.route.number : getRouteKey(edge.route);
 
-                    // 運休・除外系統の判定
+                    // 運休・除外系統のスキップ（徒歩エッジは除外しない）
                     if (!edge.isVirtual && excludedRoutes.has(rKey)) continue;
 
-                    let isTransfer = curr.lastRouteKey !== 'NONE' && curr.lastRouteKey !== rKey;
+                    const isCurrVirtual = curr.lastRouteKey && curr.lastRouteKey.startsWith('__VIRTUAL_');
+                    const isNextVirtual = edge.isVirtual;
+                    const isVirtualTransition = isCurrVirtual || isNextVirtual;
+
+                    // 電車どうしの切り替えのみを「路線乗換」とみなす
+                    let isTransfer = !isVirtualTransition && curr.lastRouteKey !== 'NONE' && curr.lastRouteKey !== rKey;
 
                     let edgeCost;
                     if (edge.isVirtual) {
-                        edgeCost = edge.realDist;
+                        edgeCost = edge.realDist; // 純粋な徒歩コスト
                     } else {
                         edgeCost = edge.realDist;
                         if (priorityMode === 'fare') {
                             edgeCost *= edge.fareCost;
                         } else if (priorityMode === 'time') {
-                            // 特急優勢モード：速い種別をダイレクトに最優先（0.3倍〜1.0倍）
-                            edgeCost *= edge.speedWeight;
+                            edgeCost *= edge.speedWeight; // 特急(0.35)や急行(0.5)を最優先
                         } else if (priorityMode === 'balanced') {
-                            // おすすめモード：特急を優遇しつつも短距離での無理な乗換を防ぐ（平方根によるマイルド補正）
-                            edgeCost *= Math.pow(edge.speedWeight, 0.5);
+                            edgeCost *= Math.pow(edge.speedWeight, 1.1); // マイルド補正
                         } else if (priorityMode === 'transfer') {
                             edgeCost *= 1.0;
                         }
@@ -1009,26 +1065,30 @@
                     let transferPenalty = 0;
                     if (isTransfer) {
                         if (priorityMode === 'transfer') {
-                            transferPenalty = 500000; // 直通極端優先
+                            transferPenalty = 500000;
                         } else if (priorityMode === 'fare') {
                             transferPenalty = 4000;
                         } else if (priorityMode === 'balanced') {
-                            // おすすめモード：数駅早くなる程度では乗り換えず、大きな短縮効果がある場合のみ乗換を許可する高めペナルティ
-                            transferPenalty = 7000;
+                            transferPenalty = 6000; // おすすめモード：無闇な乗換を抑制
                         } else if (priorityMode === 'time') {
-                            // 特急優先モード：速い列車へ積極的に乗り換える低めペナルティ
-                            transferPenalty = 1500;
+                            transferPenalty = 300; // 特急優先モード：低ペナルティで積極的に特急に乗換
                         } else {
-                            transferPenalty = 3000;
+                            transferPenalty = 2000;
+                        }
+
+                        // 一度乗った路線へのループ乗り直し防止
+                        let checkRoutes = new Set(curr.usedRoutes);
+                        if (curr.lastRouteKey !== 'NONE' && !isCurrVirtual) {
+                            checkRoutes.add(curr.lastRouteKey);
+                        }
+                        if (checkRoutes.has(rKey)) {
+                            transferPenalty += 300000;
                         }
                     }
 
                     let nextUsedRoutes = new Set(curr.usedRoutes);
-                    if (curr.lastRouteKey !== 'NONE') nextUsedRoutes.add(curr.lastRouteKey);
-
-                    // Uターン・無意味な再乗換の抑制
-                    if (isTransfer && nextUsedRoutes.has(rKey)) {
-                        transferPenalty += 300000;
+                    if (curr.lastRouteKey !== 'NONE' && !isCurrVirtual) {
+                        nextUsedRoutes.add(curr.lastRouteKey);
                     }
 
                     let newCost = curr.cost + edgeCost + transferPenalty;
@@ -1045,6 +1105,7 @@
                         pq.push({
                             stationId: edge.to,
                             lastRouteKey: rKey,
+                            lastStationId: curr.stationId,
                             cost: newCost,
                             usedRoutes: nextUsedRoutes,
                             key: nextKey
@@ -1065,10 +1126,19 @@
             return path;
         }
 
-        function findRouteWithWaypoint(startId, waypointId, endId, priorityMode) {
-            if (!waypointId) { return findShortestPath(startId, endId, priorityMode); }
-            let part1 = findShortestPath(startId, waypointId, priorityMode); if (!part1) return null;
-            let part2 = findShortestPath(waypointId, endId, priorityMode); if (!part2) return null;
+        function findRouteWithWaypoint(startIds, waypointIds, endIds, priorityMode) {
+            if (!waypointIds || waypointIds.length === 0) {
+                return findShortestPath(startIds, endIds, priorityMode);
+            }
+            let part1 = findShortestPath(startIds, waypointIds, priorityMode);
+            if (!part1 || part1.length === 0) return null;
+
+            let lastStep = part1[part1.length - 1];
+            let reachedWaypointId = lastStep.to;
+
+            let part2 = findShortestPath([reachedWaypointId], endIds, priorityMode);
+            if (!part2 || part2.length === 0) return null;
+
             return part1.concat(part2);
         }
 
@@ -1087,18 +1157,17 @@
 
             if (!startName || !endName) return;
 
-            let startId = null, waypointId = null, endId = null;
-            const stations = globalData.stations || {};
-            for (let id in stations) {
-                const pName = parseName(stations[id].name).primary;
-                if (pName === startName) startId = id;
-                if (pName === waypointName) waypointId = id;
-                if (pName === endName) endId = id;
+            const startIds = getStationIdsByName(startName);
+            const waypointIds = waypointName ? getStationIdsByName(waypointName) : [];
+            const endIds = getStationIdsByName(endName);
+
+            if (startIds.length === 0 || endIds.length === 0) {
+                resultsEl.innerHTML = `<p style="color:#e53e3e; font-size:0.85rem; text-align:center;">⚠️ 指定された駅が見つかりませんでした。</p>`;
+                resetRouteHighlight();
+                return;
             }
 
-            if (!startId || !endId || startId === endId) return;
-
-            const path = findRouteWithWaypoint(startId, waypointId, endId, priorityMode);
+            const path = findRouteWithWaypoint(startIds, waypointIds, endIds, priorityMode);
             if (!path || path.length === 0) {
                 resultsEl.innerHTML = `<p style="color:#e53e3e; font-size:0.85rem; text-align:center;">⚠️ 指定された条件、または除外系統を回避するルートが見つかりませんでした。</p>`;
                 resetRouteHighlight();
@@ -1111,7 +1180,8 @@
 
             path.forEach(step => {
                 if (step.route.isVirtual) {
-                    const p1 = globalStationCoords[step.from]; const p2 = globalStationCoords[step.to];
+                    const p1 = globalStationCoords[step.from];
+                    const p2 = globalStationCoords[step.to];
                     if (p1 && p2) {
                         const dashLine = L.polyline([p1, p2], {
                             color: '#ecc94b', weight: 4, opacity: 0.9, dashArray: '6, 8'
@@ -1140,8 +1210,8 @@
             let segments = [];
 
             path.forEach((step) => {
-                const fromName = parseName(stations[step.from].name).primary;
-                const toName = parseName(stations[step.to].name).primary;
+                const fromName = parseName(globalData.stations[step.from] ? globalData.stations[step.from].name : '').primary;
+                const toName = parseName(globalData.stations[step.to] ? globalData.stations[step.to].name : '').primary;
 
                 if (step.route.isVirtual) {
                     segments.push({ type: 'virtual', virtualType: step.route.virtualType, startStation: fromName, endStation: toName });
@@ -1158,7 +1228,8 @@
                 const last = segments[segments.length - 1];
 
                 if (last && last.type === 'ride' && last.routeKey === rKey) {
-                    last.endStation = toName; last.count++;
+                    last.endStation = toName;
+                    last.count++;
                 } else {
                     segments.push({
                         type: 'ride',
@@ -1193,11 +1264,13 @@
             resultsEl.innerHTML = html;
 
             let mapBoundsPoints = [];
-            path.forEach(step => { mapBoundsPoints.push(globalStationCoords[step.from]); mapBoundsPoints.push(globalStationCoords[step.to]); });
+            path.forEach(step => {
+                if (globalStationCoords[step.from]) mapBoundsPoints.push(globalStationCoords[step.from]);
+                if (globalStationCoords[step.to]) mapBoundsPoints.push(globalStationCoords[step.to]);
+            });
             if (mapBoundsPoints.length > 0) map.fitBounds(L.latLngBounds(mapBoundsPoints).pad(0.2));
         }
 
-        // ── 系統除外の切替 ──
         function toggleRouteExclude(encodedKey, checked) {
             const routeKey = decodeURIComponent(encodedKey);
             if (checked) { excludedRoutes.add(routeKey); }
@@ -1205,7 +1278,6 @@
             saveExcludedRoutes();
         }
 
-        // ── 除外設定リストのフィルタ・描画（路線名＋種別/系統番号＋カラー表示） ──
         function filterExcludeList(query) {
             lastExcludeQuery = (query || '').toLowerCase();
             const container = document.getElementById('exclude-list-container');
