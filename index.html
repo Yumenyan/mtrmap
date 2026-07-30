@@ -436,7 +436,7 @@
         let lastExcludeQuery = "";
         let virtualHighlightLayers = [];
 
-        // 同名駅・接続駅の徒歩乗換コスト設定（適度な重み）
+        // 同名駅・接続駅の徒歩乗換コスト設定
         const VIRTUAL_TRANSFER_COST = { sameName: 250, connection: 150 };
 
         // 利用者データ関連
@@ -454,7 +454,6 @@
                 .replace(/'/g, '&#39;');
         }
 
-        // 路線名 + 種別/系統番号 + カラーで個別に識別
         function getRouteKey(route) {
             if (!route) return 'UNKNOWN';
             const nameInfo = parseName(route.name);
@@ -770,22 +769,19 @@
             let fareCost = 1.0;
 
             if (hasKana) {
-                // 超特急・特急（愛称付き）
+                // 超特急・特急
                 speedWeight = 0.35;
                 fareCost = 3.0;
             } else {
                 const num = parseInt(numStr, 10);
                 if (!isNaN(num)) {
                     if (num >= 700) {
-                        // 700番台以上：急行系統
                         speedWeight = 0.5;
                         fareCost = 2.0;
                     } else if (num >= 650) {
-                        // 650番台以上：準急系統
                         speedWeight = 0.75;
                         fareCost = 1.5;
                     } else {
-                        // 650未満：各駅停車・普通
                         speedWeight = 1.0;
                         fareCost = 1.0;
                     }
@@ -964,6 +960,42 @@
                 });
             }
 
+            // ★ 空港駅の検出と直行フライト（航空路）エッジの構築
+            const airportIds = [];
+            for (const id in stations) {
+                if (!globalGraph[id]) continue;
+                const pName = parseName(stations[id].name).primary;
+                if (pName.includes('空港')) {
+                    airportIds.push(id);
+                }
+            }
+
+            for (let i = 0; i < airportIds.length; i++) {
+                for (let j = i + 1; j < airportIds.length; j++) {
+                    const idA = airportIds[i];
+                    const idB = airportIds[j];
+                    const p1 = stations[idA];
+                    const p2 = stations[idB];
+                    if (!p1 || !p2) continue;
+                    const dist = Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.z - p2.z, 2));
+
+                    const flightRoute = {
+                        number: '✈️ [航空便]',
+                        name: '航空路線||フライト',
+                        color: 0x00bfff, // Skyblue
+                        isAirplane: true
+                    };
+
+                    // 飛行機：特急(0.35)を凌駕する超速度(0.1)、特急(3.0)を遥かに超える高運賃(10.0)
+                    globalGraph[idA].push({
+                        to: idB, route: flightRoute, realDist: dist, speedWeight: 0.1, fareCost: 10.0, isAirplane: true
+                    });
+                    globalGraph[idB].push({
+                        to: idA, route: flightRoute, realDist: dist, speedWeight: 0.1, fareCost: 10.0, isAirplane: true
+                    });
+                }
+            }
+
             if (bounds.length > 0) map.fitBounds(L.latLngBounds(bounds).pad(0.08));
 
             const datalist = document.getElementById('stations-datalist');
@@ -975,7 +1007,6 @@
             updateSidebarList();
         }
 
-        // 駅名から合致するすべての内部IDを取得するヘルパー関数
         function getStationIdsByName(targetName) {
             const stations = (globalData && globalData.stations) ? globalData.stations : {};
             const ids = [];
@@ -988,15 +1019,14 @@
             return ids;
         }
 
-        // ── 改良型ダイクストラ探索（マルチソース＆マルチターゲット対応） ──
-        function findShortestPath(startIds, endIds, priorityMode) {
+        // ── ダイクストラ探索（飛行機モード対応） ──
+        function findShortestPath(startIds, endIds, priorityMode, enableAirplane) {
             if (!startIds || startIds.length === 0 || !endIds || endIds.length === 0) return null;
             const endSet = new Set(endIds);
             let distances = {};
             let backtrace = {};
             let pq = [];
 
-            // すべての出発地IDを距離0として初期化（最初から徒歩で別ホームへ行く不自然動作を抑止）
             for (let startId of startIds) {
                 if (!globalGraph[startId]) continue;
                 const startKey = startId + '_NONE';
@@ -1004,7 +1034,7 @@
                 pq.push({
                     stationId: startId,
                     lastRouteKey: 'NONE',
-                    lastStationId: null, // Uターン防止用
+                    lastStationId: null,
                     cost: 0,
                     usedRoutes: new Set(),
                     key: startKey
@@ -1020,7 +1050,6 @@
 
                 if (curr.cost > distances[curr.key]) continue;
 
-                // 到着地IDのいずれかに到達した時点で判定
                 if (endSet.has(curr.stationId)) {
                     if (curr.cost < minTargetCost) {
                         minTargetCost = curr.cost;
@@ -1031,52 +1060,54 @@
 
                 let neighbors = globalGraph[curr.stationId] || [];
                 for (let edge of neighbors) {
-                    // 直前にいた駅への即時Uターン・引き返しの防止
                     if (edge.to === curr.lastStationId) continue;
 
-                    const rKey = edge.isVirtual ? edge.route.number : getRouteKey(edge.route);
+                    // ★ 飛行機モード無効時は飛行機エッジを判定から外す
+                    if (edge.isAirplane && !enableAirplane) continue;
 
-                    // 運休・除外系統のスキップ（徒歩エッジは除外しない）
-                    if (!edge.isVirtual && excludedRoutes.has(rKey)) continue;
+                    const rKey = edge.isVirtual
+                        ? edge.route.number
+                        : (edge.isAirplane ? '✈️_AIRPLANE' : getRouteKey(edge.route));
 
-                    const isCurrVirtual = curr.lastRouteKey && curr.lastRouteKey.startsWith('__VIRTUAL_');
-                    const isNextVirtual = edge.isVirtual;
+                    if (!edge.isVirtual && !edge.isAirplane && excludedRoutes.has(rKey)) continue;
+
+                    const isCurrVirtual = curr.lastRouteKey && (curr.lastRouteKey.startsWith('__VIRTUAL_') || curr.lastRouteKey === '✈️_AIRPLANE');
+                    const isNextVirtual = edge.isVirtual || edge.isAirplane;
                     const isVirtualTransition = isCurrVirtual || isNextVirtual;
 
-                    // 電車どうしの切り替えのみを「路線乗換」とみなす
                     let isTransfer = !isVirtualTransition && curr.lastRouteKey !== 'NONE' && curr.lastRouteKey !== rKey;
 
                     let edgeCost;
                     if (edge.isVirtual) {
-                        edgeCost = edge.realDist; // 純粋な徒歩コスト
+                        edgeCost = edge.realDist;
+                    } else if (edge.isAirplane) {
+                        // 飛行機専用の特別コスト計算
+                        edgeCost = edge.realDist;
+                        if (priorityMode === 'fare') {
+                            edgeCost *= edge.fareCost; // 10.0 (非常に高く設定され回避されやすい)
+                        } else if (priorityMode === 'time') {
+                            edgeCost *= edge.speedWeight; // 0.1 (超高速のため優先的に選択)
+                        } else if (priorityMode === 'balanced') {
+                            edgeCost *= Math.pow(edge.speedWeight, 1.1) * 1.8; // バランス型でのコスト調整
+                        }
                     } else {
                         edgeCost = edge.realDist;
                         if (priorityMode === 'fare') {
                             edgeCost *= edge.fareCost;
                         } else if (priorityMode === 'time') {
-                            edgeCost *= edge.speedWeight; // 特急(0.35)や急行(0.5)を最優先
+                            edgeCost *= edge.speedWeight;
                         } else if (priorityMode === 'balanced') {
-                            edgeCost *= Math.pow(edge.speedWeight, 1.1); // マイルド補正
-                        } else if (priorityMode === 'transfer') {
-                            edgeCost *= 1.0;
+                            edgeCost *= Math.pow(edge.speedWeight, 1.1);
                         }
                     }
 
                     let transferPenalty = 0;
                     if (isTransfer) {
-                        if (priorityMode === 'transfer') {
-                            transferPenalty = 500000;
-                        } else if (priorityMode === 'fare') {
-                            transferPenalty = 4000;
-                        } else if (priorityMode === 'balanced') {
-                            transferPenalty = 6000; // おすすめモード：無闇な乗換を抑制
-                        } else if (priorityMode === 'time') {
-                            transferPenalty = 300; // 特急優先モード：低ペナルティで積極的に特急に乗換
-                        } else {
-                            transferPenalty = 2000;
-                        }
+                        if (priorityMode === 'fare') transferPenalty = 4000;
+                        else if (priorityMode === 'balanced') transferPenalty = 6000;
+                        else if (priorityMode === 'time') transferPenalty = 300;
+                        else transferPenalty = 2000;
 
-                        // 一度乗った路線へのループ乗り直し防止
                         let checkRoutes = new Set(curr.usedRoutes);
                         if (curr.lastRouteKey !== 'NONE' && !isCurrVirtual) {
                             checkRoutes.add(curr.lastRouteKey);
@@ -1084,6 +1115,11 @@
                         if (checkRoutes.has(rKey)) {
                             transferPenalty += 300000;
                         }
+                    }
+
+                    // 飛行機搭乗ロスタイム（搭乗手続き相当のペナルティ）
+                    if (edge.isAirplane) {
+                        transferPenalty += 800;
                     }
 
                     let nextUsedRoutes = new Set(curr.usedRoutes);
@@ -1126,17 +1162,17 @@
             return path;
         }
 
-        function findRouteWithWaypoint(startIds, waypointIds, endIds, priorityMode) {
+        function findRouteWithWaypoint(startIds, waypointIds, endIds, priorityMode, enableAirplane) {
             if (!waypointIds || waypointIds.length === 0) {
-                return findShortestPath(startIds, endIds, priorityMode);
+                return findShortestPath(startIds, endIds, priorityMode, enableAirplane);
             }
-            let part1 = findShortestPath(startIds, waypointIds, priorityMode);
+            let part1 = findShortestPath(startIds, waypointIds, priorityMode, enableAirplane);
             if (!part1 || part1.length === 0) return null;
 
             let lastStep = part1[part1.length - 1];
             let reachedWaypointId = lastStep.to;
 
-            let part2 = findShortestPath([reachedWaypointId], endIds, priorityMode);
+            let part2 = findShortestPath([reachedWaypointId], endIds, priorityMode, enableAirplane);
             if (!part2 || part2.length === 0) return null;
 
             return part1.concat(part2);
@@ -1153,6 +1189,7 @@
             const waypointName = document.getElementById('route-waypoint').value.trim();
             const endName = document.getElementById('route-end').value.trim();
             const priorityMode = document.getElementById('route-priority').value;
+            const enableAirplane = document.getElementById('enable-airplane') ? document.getElementById('enable-airplane').checked : false;
             const resultsEl = document.getElementById('search-results');
 
             if (!startName || !endName) return;
@@ -1167,7 +1204,7 @@
                 return;
             }
 
-            const path = findRouteWithWaypoint(startIds, waypointIds, endIds, priorityMode);
+            const path = findRouteWithWaypoint(startIds, waypointIds, endIds, priorityMode, enableAirplane);
             if (!path || path.length === 0) {
                 resultsEl.innerHTML = `<p style="color:#e53e3e; font-size:0.85rem; text-align:center;">⚠️ 指定された条件、または除外系統を回避するルートが見つかりませんでした。</p>`;
                 resetRouteHighlight();
@@ -1191,6 +1228,20 @@
                     }
                     return;
                 }
+                // ★ 飛行機ハイライト描画
+                if (step.route.isAirplane) {
+                    const p1 = globalStationCoords[step.from];
+                    const p2 = globalStationCoords[step.to];
+                    if (p1 && p2) {
+                        const flightLine = L.polyline([p1, p2], {
+                            color: '#00bfff', weight: 5, opacity: 0.9, dashArray: '10, 10'
+                        }).addTo(routeLayerGroup);
+                        flightLine.bringToFront();
+                        virtualHighlightLayers.push(flightLine);
+                    }
+                    return;
+                }
+
                 const targets = routeFeaturesMap.filter(seg =>
                     seg.routeObj === step.route &&
                     ((seg.fromId === step.from && seg.toId === step.to) || (seg.fromId === step.to && seg.toId === step.from))
@@ -1215,6 +1266,11 @@
 
                 if (step.route.isVirtual) {
                     segments.push({ type: 'virtual', virtualType: step.route.virtualType, startStation: fromName, endStation: toName });
+                    return;
+                }
+
+                if (step.route.isAirplane) {
+                    segments.push({ type: 'airplane', startStation: fromName, endStation: toName });
                     return;
                 }
 
@@ -1249,6 +1305,15 @@
                         ? '同名の別駅として乗換'
                         : '乗換接続駅を利用して乗換';
                     html += `<div class="transfer-node" style="background:#fffceb; border-left:3px solid #ecc94b;">🔀 ${escapeHtml(seg.startStation)} → ${escapeHtml(seg.endStation)}（${label}）</div>`;
+                    return;
+                }
+                if (seg.type === 'airplane') {
+                    html += `
+                    <div class="result-card" style="border-left: 6px solid #00bfff; background: #f0f9ff;">
+                        <strong style="color:#0284c7; font-size:0.9rem;">✈️ 航空便 (直行フライト)</strong>
+                        <div style="margin-top:4px; font-size:0.85rem; color:#0369a1; font-weight:bold;">${escapeHtml(seg.startStation)} ➔ ${escapeHtml(seg.endStation)}</div>
+                        <div style="font-size:0.75rem; color:#0284c7; margin-top:4px;">⚡ 空港間を直線移動 (最速・高運賃)</div>
+                    </div>`;
                     return;
                 }
                 if (idx > 0 && segments[idx - 1].type === 'ride') {
@@ -1348,6 +1413,17 @@
                             <option value="fare">🪙 運賃安さ重視</option>
                         </select>
                     </div>
+
+                    <div class="search-form-group" style="margin-bottom:14px; background:#f0f9ff; padding:10px; border-radius:8px; border:1px solid #bae6fd;">
+                        <label style="display:flex; align-items:center; cursor:pointer; font-size:0.82rem; font-weight:bold; color:#0369a1; text-transform:none; margin:0;">
+                            <input type="checkbox" id="enable-airplane" style="margin-right:8px; width:16px; height:16px; cursor:pointer;">
+                            ✈️ 飛行機ルート（空港間フライト）を利用
+                        </label>
+                        <div style="font-size:0.7rem; color:#0284c7; margin-left:24px; margin-top:3px; line-height:1.3;">
+                            ※「〇〇空港」駅同士を直線フライトで結びます (超高速/高運賃)。
+                        </div>
+                    </div>
+
                     <div class="search-form-group"><label>🚉 出発駅</label><input type="text" id="route-start" list="stations-datalist" class="search-box" placeholder="出発駅名を入力..."></div>
                     <div class="search-form-group"><label>📍 経由駅 (任意)</label><input type="text" id="route-waypoint" list="stations-datalist" class="search-box" placeholder="経由させたい駅名を入力..."></div>
                     <div class="search-form-group"><label>🚉 到着駅</label><input type="text" id="route-end" list="stations-datalist" class="search-box" placeholder="到着駅名を入力..."></div>
