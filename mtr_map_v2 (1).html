@@ -1,0 +1,1283 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MTR 路線図・駅マップ可視化ツール</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root {
+            --sidebar-width: 350px;
+            --primary-color: #1a202c;
+            --accent-color: #3182ce;
+            --bg-color: #ffffff;
+            --sidebar-bg: #ffffff;
+            --text-color: #2d3748;
+            --text-muted: #718096;
+            --border-color: #e2e8f0;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            overflow: hidden;
+            background: var(--bg-color);
+            color: var(--text-color);
+        }
+
+        #app {
+            display: flex;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* サイドバー */
+        #sidebar {
+            width: var(--sidebar-width);
+            height: 100%;
+            background: var(--sidebar-bg);
+            box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15);
+            display: flex;
+            flex-direction: column;
+            z-index: 1010;
+        }
+
+        .header {
+            padding: 24px 20px;
+            background: var(--primary-color);
+            color: white;
+            border-bottom: 3px solid var(--accent-color);
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 1.3rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        .header p {
+            margin: 6px 0 0 0;
+            font-size: 0.8rem;
+            opacity: 0.7;
+            font-weight: 300;
+        }
+
+        /* ステータスエリア */
+        .status-area {
+            padding: 14px 20px;
+            background: #f7fafc;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.8rem;
+            line-height: 1.5;
+            color: #4a5568;
+        }
+
+        .status-retry-btn {
+            margin-top: 6px;
+            padding: 5px 12px;
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+
+        /* 手動ドロップ */
+        .upload-area {
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border-color);
+            background: #f0f4f8;
+            text-align: center;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .upload-area:hover {
+            background: #e2e8f0;
+        }
+
+        .upload-area input {
+            display: none;
+        }
+
+        .ridership-area {
+            border-bottom: 1px solid var(--border-color);
+            background: #fffceb;
+        }
+
+        .ridership-toggle {
+            padding: 10px 20px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: #975a16;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .ridership-panel {
+            padding: 0 20px 14px 20px;
+        }
+
+        .ridership-panel input {
+            width: 100%;
+            padding: 7px 10px;
+            border: 1px solid #e0c56b;
+            border-radius: 6px;
+            font-size: 0.78rem;
+            margin-bottom: 6px;
+            box-sizing: border-box;
+        }
+
+        .ridership-panel label {
+            font-size: 0.7rem;
+            color: #975a16;
+            display: block;
+            margin-bottom: 2px;
+        }
+
+        .ridership-panel .search-btn {
+            width: 100%;
+        }
+
+        .ridership-info-block {
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px dashed #cbd5e0;
+            font-size: 0.75rem;
+            color: #4a5568;
+            line-height: 1.6;
+        }
+
+        .upload-hint {
+            font-size: 0.8rem;
+            color: #2b6cb0;
+            font-weight: 600;
+            display: block;
+        }
+
+        .controls {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            background: #fff;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid #cbd5e0;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            color: var(--text-color);
+            margin-bottom: 2px;
+        }
+
+        .search-box:focus {
+            border-color: var(--accent-color);
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.2);
+        }
+
+        /* タブ */
+        .tab-container {
+            display: flex;
+            background: #f7fafc;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .tab {
+            flex: 1;
+            padding: 14px 10px;
+            text-align: center;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: #a0aec0;
+            border-bottom: 3px solid transparent;
+        }
+
+        .tab.active {
+            color: var(--accent-color);
+            border-bottom-color: var(--accent-color);
+            background: white;
+        }
+
+        /* リスト表示部 */
+        .list-viewport {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 20px;
+            background: #fff;
+        }
+
+        .list-item {
+            padding: 12px 14px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            background: #f8fafc;
+            cursor: pointer;
+            font-size: 0.85rem;
+            border-left: 4px solid #e2e8f0;
+            border-top: 1px solid #edf2f7;
+            border-right: 1px solid #edf2f7;
+            border-bottom: 1px solid #edf2f7;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+        }
+
+        .list-item:hover {
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            background: #fff;
+        }
+
+        .list-item.route-item {
+            border-left-width: 6px;
+        }
+
+        .item-title {
+            font-weight: 700;
+            color: #2d3748;
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .item-sub {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        /* マップ領域 */
+        #map-container {
+            flex: 1;
+            height: 100%;
+            background: var(--bg-color);
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+            background: var(--bg-color);
+        }
+
+        /* 検索フォーム */
+        .search-form-group {
+            margin-bottom: 12px;
+        }
+
+        .search-form-group label {
+            display: block;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #4a5568;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+
+        .search-btn {
+            width: 100%;
+            padding: 12px;
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 700;
+            cursor: pointer;
+            font-size: 0.9rem;
+            box-shadow: 0 2px 4px rgba(49, 130, 206, 0.2);
+        }
+
+        .result-card {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: #ffffff;
+            padding: 14px;
+            margin-bottom: 10px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        .transfer-node {
+            text-align: center;
+            margin: 12px 0;
+            font-size: 0.75rem;
+            color: #4a5568;
+            font-weight: 700;
+            background: #edf2f7;
+            padding: 6px;
+            border-radius: 6px;
+            border: 1px dashed #cbd5e0;
+        }
+
+        /* 除外リスト用スタイル */
+        .exclude-container {
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 10px;
+            max-height: 140px;
+            overflow-y: auto;
+            background: #f8fafc;
+            margin-top: 4px;
+        }
+
+        .exclude-item {
+            display: flex;
+            align-items: center;
+            font-size: 0.8rem;
+            margin-bottom: 6px;
+            cursor: pointer;
+        }
+
+        .exclude-item input {
+            margin-right: 8px;
+            cursor: pointer;
+        }
+
+        .exclude-search {
+            padding: 6px 10px;
+            font-size: 0.8rem;
+            border-radius: 6px;
+            border: 1px solid #cbd5e0;
+            width: 100%;
+            margin-bottom: 4px;
+        }
+
+        .leaflet-tooltip-custom {
+            background: #1a202c !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 4px !important;
+            font-weight: bold !important;
+            font-size: 11px !important;
+            padding: 4px 8px !important;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3) !important;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="app">
+        <div id="sidebar">
+            <div class="header">
+                <h1>MTR 路線図・駅マップ</h1>
+                <p>Minecraft Transit Railway Visualizer</p>
+            </div>
+
+            <div class="status-area" id="connection-status">
+                🔄 データを同期中...
+            </div>
+
+            <div class="upload-area" id="drop-zone" onclick="document.getElementById('file-input').click()">
+                <span class="upload-hint">📁 data.json の手動ドロップ・選択も可能</span>
+                <input type="file" id="file-input" accept=".json">
+            </div>
+
+            <div class="ridership-area">
+                <div class="ridership-toggle" onclick="toggleRidershipPanel()" id="ridership-toggle-btn">📊 利用者データ連携 ▾</div>
+                <div class="ridership-panel" id="ridership-panel" style="display:none;">
+                    <label>スプレッドシートID</label>
+                    <input type="text" id="ridership-sheet-id" placeholder="スプレッドシートのID">
+                    <label>gid（タブID）</label>
+                    <input type="text" id="ridership-gid" placeholder="例: 1591757481">
+                    <label>GAS Web App URL（直接取得できない場合の代替・任意）</label>
+                    <input type="text" id="ridership-gas-url" placeholder="https://script.google.com/macros/s/.../exec">
+                    <button class="search-btn" onclick="loadRidershipData()">🔄 利用者データを読み込む</button>
+                    <div id="ridership-status" style="font-size:0.72rem; color:#718096; margin-top:6px; line-height:1.5;"></div>
+                </div>
+            </div>
+
+            <div class="controls" id="search-box-wrapper">
+                <input type="text" id="search-input" class="search-box" placeholder="駅名・路線名で絞り込み...">
+            </div>
+            <div class="tab-container">
+                <div class="tab active" id="tab-routes" onclick="switchTab('routes')">路線一覧</div>
+                <div class="tab" id="tab-stations" onclick="switchTab('stations')">駅一覧</div>
+                <div class="tab" id="tab-search" onclick="switchTab('search')">乗換案内</div>
+            </div>
+            <div class="list-viewport" id="list-content">
+                <p style="text-align:center; color:#a0aec0; font-size:0.85rem; margin-top:40px;">データ読み込み中...</p>
+            </div>
+        </div>
+
+        <div id="map-container">
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <datalist id="stations-datalist"></datalist>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        let map = null;
+        let routeLayerGroup = null;
+        let stationLayerGroup = null;
+        let currentTab = 'routes';
+        let globalData = null;
+
+        let offsetX = 0;
+        let offsetZ = 0;
+
+        let stationMarkersMap = {};
+        let routeFeaturesMap = [];
+        let globalGraph = {};
+        let globalStationCoords = {};
+        let excludedRoutes = new Set(); // 除外された系統番号・名称を保持
+        let lastExcludeQuery = ""; // 系統除外内検索クエリを保持
+        let virtualHighlightLayers = []; // 同名駅・接続駅の徒歩乗換を示す一時的な破線レイヤー
+
+        // 同名駅・connections定義の徒歩乗換にかかる仮想コスト（実距離に依存しない固定値）
+        const VIRTUAL_TRANSFER_COST = { sameName: 900, connection: 400 };
+
+        // ── 利用者データ（Googleスプレッドシート連携）関連 ──
+        const RIDERSHIP_DEFAULT_SHEET_ID = '17Q0-Q7LynBNk89kttIWdOVTD-ktQaL_ItM91vgBpUhE';
+        const RIDERSHIP_DEFAULT_GID = '1591757481';
+        let ridershipMap = {}; // 駅名(コード除去後) -> {yomi, riders, grade, constant, country}
+
+        // ── 除外系統設定の永続化 ──
+        function saveExcludedRoutes() {
+            try { localStorage.setItem('mtr_excluded_routes', JSON.stringify([...excludedRoutes])); } catch (e) { /* no-op */ }
+        }
+        function loadExcludedRoutes() {
+            try {
+                const raw = localStorage.getItem('mtr_excluded_routes');
+                if (raw) { excludedRoutes = new Set(JSON.parse(raw)); }
+            } catch (e) { /* no-op */ }
+        }
+        loadExcludedRoutes();
+
+        function initMap() {
+            if (map) return;
+            map = L.map('map', {
+                crs: L.CRS.Simple,
+                minZoom: -8,
+                maxZoom: 4,
+                zoomDelta: 0.5,
+                zoomSnap: 0.5,
+                attributionControl: false
+            });
+
+            if (!map.getPane('stationsPane')) {
+                const stationsPane = map.createPane('stationsPane');
+                stationsPane.style.zIndex = 600;
+            }
+
+            routeLayerGroup = L.layerGroup().addTo(map);
+            stationLayerGroup = L.layerGroup().addTo(map);
+        }
+
+        initMap();
+        map.setView([0, 0], 0);
+
+        async function loadDataAuto() {
+            const statusEl = document.getElementById('connection-status');
+            const urls = [
+                'http://localhost:8888/data',
+                'http://localhost:18888/data',
+                'data.json'
+            ];
+
+            for (let url of urls) {
+                try {
+                    let res = await fetch(url, { method: 'GET', mode: 'cors' });
+                    if (res.ok) {
+                        let data = await res.json();
+                        statusEl.innerHTML = `✅ 📡 正常に同期しました`;
+                        statusEl.style.background = "#e6fffa"; statusEl.style.color = "#234e52";
+                        renderMtrMap(data);
+                        return;
+                    }
+                } catch (e) {
+                    console.warn(`Fetch fallback matching failed for: ${url}`);
+                }
+            }
+
+            statusEl.innerHTML = `
+            <div style="font-weight: bold; color: #e53e3e;">📡 自動同期を待機中...</div>
+            <div style="font-size: 11px; color: #718096; margin-top:2px;">手動で data.json を読み込むこともできます。</div>
+            <button class="status-retry-btn" onclick="loadDataAuto()">再接続を試行</button>
+        `;
+            statusEl.style.background = "#fff5f5"; statusEl.style.color = "#9b2c2c";
+        }
+
+        window.addEventListener('DOMContentLoaded', loadDataAuto);
+
+        const fileInput = document.getElementById('file-input');
+        const dropZone = document.getElementById('drop-zone');
+        fileInput.addEventListener('change', (e) => { if (e.target.files.length > 0) readFile(e.target.files[0]); });
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.background = "#cbd5e0"; });
+        dropZone.addEventListener('dragleave', () => { dropZone.style.background = "#f0f4f8"; });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault(); dropZone.style.background = "#f0f4f8";
+            if (e.dataTransfer.files.length > 0) readFile(e.dataTransfer.files[0]);
+        });
+
+        function readFile(file) {
+            const reader = new FileReader();
+            reader.onload = function (event) {
+                try {
+                    const parsedData = JSON.parse(event.target.result);
+                    document.getElementById('connection-status').innerHTML = "📁 手動アップロードデータを適用しました。";
+                    document.getElementById('connection-status').style.background = "#edf2f7";
+                    document.getElementById('connection-status').style.color = "#2d3748";
+                    renderMtrMap(parsedData);
+                } catch (err) {
+                    alert("JSON読み込みエラー: " + err.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function intToHexColor(num) {
+            if (num === undefined || num === null) return '#718096';
+            return '#' + num.toString(16).padStart(6, '0');
+        }
+
+        function parseName(rawName) {
+            if (!rawName || typeof rawName !== 'string') return { primary: 'Unknown', sub: '' };
+            const parts = rawName.split('||');
+            const nameParts = parts[0].split('|');
+            return { primary: nameParts[0] || 'Unknown', sub: nameParts.slice(1).join(' / ') + (parts[1] ? ` (${parts[1].replace(/\|/g, ' → ')})` : '') };
+        }
+
+        // ── 利用者データ（Googleスプレッドシート連携） ──
+
+        // 駅名先頭の路線コード表記 "[IT702][IT1724]" などを除去する
+        function stripStationCode(name) {
+            return (name || '').replace(/^(\[[^\]]*\])+/, '').trim();
+        }
+
+        // シンプルなCSVパーサー（引用符・カンマ・改行を考慮）
+        function parseCSV(text) {
+            const rows = [];
+            let row = []; let field = ''; let inQuotes = false;
+            for (let i = 0; i < text.length; i++) {
+                const c = text[i];
+                if (inQuotes) {
+                    if (c === '"') {
+                        if (text[i + 1] === '"') { field += '"'; i++; }
+                        else { inQuotes = false; }
+                    } else { field += c; }
+                } else {
+                    if (c === '"') { inQuotes = true; }
+                    else if (c === ',') { row.push(field); field = ''; }
+                    else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+                    else if (c === '\r') { /* skip */ }
+                    else { field += c; }
+                }
+            }
+            if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+            return rows;
+        }
+
+        // スプレッドシートの行データを取得する。GAS Web App URLが指定されていればそちらを優先。
+        async function fetchSheetRows(sheetId, gid, gasUrl) {
+            if (gasUrl) {
+                const res = await fetch(gasUrl);
+                if (!res.ok) throw new Error('GAS取得失敗: HTTP ' + res.status);
+                const json = await res.json();
+                return json.values || json;
+            }
+            if (!sheetId) throw new Error('スプレッドシートIDが未入力です');
+            const url = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/gviz/tq?tqx=out:csv${gid ? '&gid=' + encodeURIComponent(gid) : ''}`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('シート取得失敗: HTTP ' + res.status + '（共有設定が「リンクを知っている全員が閲覧可」になっているかご確認ください）');
+            const text = await res.text();
+            return parseCSV(text);
+        }
+
+        function toggleRidershipPanel() {
+            const panel = document.getElementById('ridership-panel');
+            const btn = document.getElementById('ridership-toggle-btn');
+            const willShow = panel.style.display === 'none';
+            panel.style.display = willShow ? 'block' : 'none';
+            btn.textContent = willShow ? '📊 利用者データ連携 ▴' : '📊 利用者データ連携 ▾';
+        }
+
+        async function loadRidershipData() {
+            const sheetIdInput = document.getElementById('ridership-sheet-id');
+            const gidInput = document.getElementById('ridership-gid');
+            const gasInput = document.getElementById('ridership-gas-url');
+            const statusEl = document.getElementById('ridership-status');
+
+            const sheetId = (sheetIdInput.value || '').trim();
+            const gid = (gidInput.value || '').trim();
+            const gasUrl = (gasInput.value || '').trim();
+
+            if (!sheetId && !gasUrl) {
+                statusEl.textContent = '⚠️ スプレッドシートID、またはGAS Web App URLを入力してください';
+                return;
+            }
+
+            try { localStorage.setItem('mtr_ridership_sheet_id', sheetId); } catch (e) { }
+            try { localStorage.setItem('mtr_ridership_gid', gid); } catch (e) { }
+            try { localStorage.setItem('mtr_ridership_gas_url', gasUrl); } catch (e) { }
+
+            statusEl.textContent = '📡 読み込み中...';
+            try {
+                const rows = await fetchSheetRows(sheetId, gid, gasUrl);
+                if (!rows || rows.length < 2) throw new Error('データが空、または取得できませんでした');
+
+                const header = rows[0].map(h => (h || '').toString().trim());
+                const wanted = ['駅名', '読み', '定数', '級', '所在国', '利用客'];
+                const colIdx = {};
+                wanted.forEach(key => { colIdx[key] = header.indexOf(key); });
+                if (colIdx['駅名'] === -1) {
+                    throw new Error('「駅名」列が見つかりませんでした。タブ(gid)が「利用客表」系のものか確認してください。');
+                }
+
+                const map = {};
+                for (let r = 1; r < rows.length; r++) {
+                    const row = rows[r];
+                    const name = (row[colIdx['駅名']] || '').toString().trim();
+                    if (!name) continue;
+                    map[name] = {
+                        yomi: colIdx['読み'] >= 0 ? (row[colIdx['読み']] || '').toString().trim() : '',
+                        constant: colIdx['定数'] >= 0 ? (row[colIdx['定数']] || '').toString().trim() : '',
+                        grade: colIdx['級'] >= 0 ? (row[colIdx['級']] || '').toString().trim() : '',
+                        country: colIdx['所在国'] >= 0 ? (row[colIdx['所在国']] || '').toString().trim() : '',
+                        riders: colIdx['利用客'] >= 0 ? (row[colIdx['利用客']] || '').toString().trim() : ''
+                    };
+                }
+
+                ridershipMap = map;
+                try {
+                    localStorage.setItem('mtr_ridership_cache', JSON.stringify({ map, savedAt: Date.now(), sheetId, gid }));
+                } catch (e) { /* 容量超過などは無視 */ }
+
+                statusEl.textContent = `✅ ${Object.keys(map).length}駅分の利用者データを読み込みました`;
+                updateSidebarList();
+            } catch (err) {
+                let msg = `❌ 読み込み失敗: ${err.message}`;
+                statusEl.innerHTML = msg + '<br><span style="font-size:0.68rem;">直接取得できない場合は、下記の手順でGASプロキシを設置しURLを入力してください。</span>';
+
+                // フォールバック：以前取得できていたキャッシュがあれば使用
+                try {
+                    const cacheRaw = localStorage.getItem('mtr_ridership_cache');
+                    if (cacheRaw) {
+                        const cache = JSON.parse(cacheRaw);
+                        if (cache && cache.map) {
+                            ridershipMap = cache.map;
+                            statusEl.innerHTML += `<br>📦 前回取得済みのキャッシュ（${Object.keys(ridershipMap).length}駅分）を代わりに使用しています`;
+                            updateSidebarList();
+                        }
+                    }
+                } catch (e2) { /* no-op */ }
+            }
+        }
+
+        // 駅の生名称（"[IT702]黒紺島|Kurokonjima" など）から利用者データを検索する
+        function lookupRidership(rawStationName) {
+            const primary = parseName(rawStationName).primary;
+            const stripped = stripStationCode(primary);
+            return ridershipMap[stripped] || ridershipMap[primary] || null;
+        }
+
+        function formatRiderCount(v) {
+            const n = Number(String(v).replace(/,/g, ''));
+            if (isNaN(n)) return v || '―';
+            return n.toLocaleString('ja-JP');
+        }
+
+        // 一致する利用者データがあれば表示用HTMLを返す。無ければ空文字。
+        function buildRidershipHtml(rawStationName) {
+            const info = lookupRidership(rawStationName);
+            if (!info) return '';
+            return `
+            <div class="ridership-info-block">
+                <div>📖 読み: <strong>${info.yomi || '―'}</strong></div>
+                <div>👥 利用客数: <strong>${formatRiderCount(info.riders)}</strong></div>
+                <div>🏅 級: <strong>${info.grade || '―'}</strong> ／ 🔢 定数: <strong>${info.constant || '―'}</strong></div>
+                <div>🌐 所在国: <strong>${info.country || '―'}</strong></div>
+            </div>`;
+        }
+
+        // ページ読み込み時：設定値を復元し、可能であれば自動で利用者データを取得する
+        function initRidershipPanel() {
+            const sheetIdInput = document.getElementById('ridership-sheet-id');
+            const gidInput = document.getElementById('ridership-gid');
+            const gasInput = document.getElementById('ridership-gas-url');
+            const statusEl = document.getElementById('ridership-status');
+
+            let savedSheetId = null, savedGid = null, savedGasUrl = null;
+            try { savedSheetId = localStorage.getItem('mtr_ridership_sheet_id'); } catch (e) { }
+            try { savedGid = localStorage.getItem('mtr_ridership_gid'); } catch (e) { }
+            try { savedGasUrl = localStorage.getItem('mtr_ridership_gas_url'); } catch (e) { }
+
+            sheetIdInput.value = savedSheetId || RIDERSHIP_DEFAULT_SHEET_ID;
+            gidInput.value = savedGid || RIDERSHIP_DEFAULT_GID;
+            gasInput.value = savedGasUrl || '';
+
+            // 先にキャッシュがあれば即時反映（オフラインでも一覧に反映されるように）
+            try {
+                const cacheRaw = localStorage.getItem('mtr_ridership_cache');
+                if (cacheRaw) {
+                    const cache = JSON.parse(cacheRaw);
+                    if (cache && cache.map) {
+                        ridershipMap = cache.map;
+                        statusEl.textContent = `📦 キャッシュ済みデータ（${Object.keys(ridershipMap).length}駅分）を表示中。最新化するには読み込みボタンを押してください。`;
+                    }
+                }
+            } catch (e) { /* no-op */ }
+
+            // 続けて最新データの自動取得を試行（失敗してもキャッシュ表示のまま継続）
+            loadRidershipData();
+        }
+        window.addEventListener('DOMContentLoaded', initRidershipPanel);
+
+        function getRouteProperties(route) {
+            const numStr = String(route.number || '').trim();
+            const nameStr = String(route.name || '').trim();
+            const hasKana = /[\u3040-\u309F\u30A0-\u30FF]/.test(numStr) || /[\u3040-\u309F\u30A0-\u30FF]/.test(nameStr);
+            let speedWeight = 1.0; let fareCost = 1.0;
+            if (hasKana) { speedWeight = 0.35; fareCost = 3.0; }
+            else {
+                const num = parseInt(numStr, 10);
+                if (!isNaN(num)) {
+                    if (num <= 650) { speedWeight = 1.0; fareCost = 1.0; }
+                    else if (num <= 700) { speedWeight = 0.75; fareCost = 1.5; }
+                    else { speedWeight = 0.5; fareCost = 2.0; }
+                } else {
+                    if (nameStr.includes('特急') || numStr.includes('特急')) speedWeight = 0.35;
+                    else if (nameStr.includes('急行') || nameStr.includes('快速')) speedWeight = 0.5;
+                    else if (nameStr.includes('準急')) speedWeight = 0.75;
+                }
+            }
+            return { speedWeight, fareCost };
+        }
+
+        function renderMtrMap(data) {
+            if (!data) return;
+            const mtrData = Array.isArray(data) ? data[0] : data;
+            globalData = mtrData;
+
+            const routes = mtrData.routes || [];
+            const stations = mtrData.stations || {};
+            const positions = mtrData.positions || {};
+
+            routeLayerGroup.clearLayers();
+            stationLayerGroup.clearLayers();
+            stationMarkersMap = {}; routeFeaturesMap = []; globalGraph = {}; globalStationCoords = {};
+
+            let minX = Infinity; let minZ = Infinity; let hasValidStations = false;
+            for (const id in stations) {
+                const s = stations[id];
+                if (s && typeof s.x === 'number' && typeof s.z === 'number') {
+                    if (s.x < minX) minX = s.x; if (s.z < minZ) minZ = s.z;
+                    hasValidStations = true;
+                }
+            }
+            offsetX = hasValidStations ? minX : 0;
+            offsetZ = hasValidStations ? minZ : 0;
+
+            const bounds = [];
+            const stationCoords = {};
+
+            for (const id in stations) {
+                const station = stations[id];
+                if (!station || typeof station.x !== 'number' || typeof station.z !== 'number') continue;
+
+                const lat = -(station.z - offsetZ); const lng = station.x - offsetX;
+                const pos = [lat, lng];
+                bounds.push(pos); stationCoords[id] = pos; globalStationCoords[id] = pos;
+
+                const nameInfo = parseName(station.name);
+                globalGraph[id] = [];
+
+                const marker = L.circleMarker(pos, {
+                    radius: 5, fillColor: '#ffffff', color: '#1a202c', weight: 2.5, opacity: 1, fillOpacity: 1, pane: 'stationsPane'
+                });
+                marker.bindPopup(() => `
+                <div style="padding:4px;"><strong style="font-size:1.1rem; color:#1a202c;">${nameInfo.primary}</strong><br><span style="color:#718096; font-size:0.8rem;">${nameInfo.sub}</span>${buildRidershipHtml(station.name)}</div>
+            `);
+
+                marker.bindTooltip(nameInfo.primary, {
+                    permanent: false, direction: 'top', offset: [0, -6], className: 'leaflet-tooltip-custom'
+                });
+                marker.addTo(stationLayerGroup);
+                stationMarkersMap[id] = marker;
+            }
+
+            routes.forEach((route) => {
+                if (!route || !route.stations || route.stations.length === 0) return;
+
+                const numStr = String(route.number || '').trim();
+                const isOutofService = !numStr || numStr.includes('回送');
+                const hexColor = intToHexColor(route.color);
+                const nameInfo = parseName(route.name);
+
+                for (let i = 0; i < route.stations.length - 1; i++) {
+                    const item1 = route.stations[i]; const item2 = route.stations[i + 1];
+                    if (typeof item1 !== 'string' || typeof item2 !== 'string') continue;
+
+                    const fromId = item1.split('_')[0]; const toId = item2.split('_')[0];
+                    const segLatLngs = [];
+
+                    if (positions[item1] && positions[item2]) {
+                        const p1 = positions[item1]; const p2 = positions[item2];
+                        const x1 = p1.x - offsetX; const y1 = -(p1.y - offsetZ);
+                        const x2 = p2.x - offsetX; const y2 = -(p2.y - offsetZ);
+                        const dx = x2 - x1; const dy = y2 - y1;
+
+                        segLatLngs.push([y1, x1]);
+                        if (dx !== 0 && dy !== 0 && Math.abs(dx) !== Math.abs(dy)) {
+                            const absDx = Math.abs(dx); const absDy = Math.abs(dy);
+                            if (p1.vertical) {
+                                let midY = y2 - Math.sign(dy) * absDx;
+                                if (Math.sign(midY - y1) === Math.sign(dy)) { segLatLngs.push([midY, x1]); }
+                                else { let midX = x2 - Math.sign(dx) * absDy; segLatLngs.push([y1, midX]); }
+                            } else {
+                                let midX = x2 - Math.sign(dx) * absDy;
+                                if (Math.sign(midX - x1) === Math.sign(dx)) { segLatLngs.push([y1, midX]); }
+                                else { let midY = y2 - Math.sign(dy) * absDx; segLatLngs.push([midY, x1]); }
+                            }
+                        }
+                        segLatLngs.push([y2, x2]);
+                    } else if (stationCoords[fromId] && stationCoords[toId]) {
+                        segLatLngs.push(stationCoords[fromId]);
+                        segLatLngs.push(stationCoords[toId]);
+                    }
+
+                    if (segLatLngs.length < 2) continue;
+
+                    const polyline = L.polyline(segLatLngs, {
+                        color: hexColor, weight: 5, opacity: 0.85, lineJoin: 'round', lineCap: 'round'
+                    }).addTo(routeLayerGroup);
+
+                    polyline.bindPopup(`
+                    <div style="font-size:0.9rem;"><strong style="color:${hexColor};">${nameInfo.primary}</strong><br><span style="font-size:0.75rem; color:#718096;">${nameInfo.sub}</span></div>
+                `);
+
+                    routeFeaturesMap.push({
+                        routeObj: route, fromId: fromId, toId: toId, polyline: polyline, color: hexColor, latlngs: segLatLngs
+                    });
+
+                    if (!isOutofService && stations[fromId] && stations[toId]) {
+                        const rProps = getRouteProperties(route);
+                        const p1 = stations[fromId]; const p2 = stations[toId];
+                        const dist = Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.z - p2.z, 2));
+
+                        if (!globalGraph[fromId]) globalGraph[fromId] = [];
+                        globalGraph[fromId].push({
+                            to: toId, route: route, realDist: dist, speedWeight: rProps.speedWeight, fareCost: rProps.fareCost
+                        });
+                    }
+                }
+            });
+
+            // ── 同名の別駅どうし、および connections で定義された乗換接続駅どうしを
+            //    徒歩で行き来できるよう、仮想的なグラフ辺を追加する ──
+            const nameGroups = {};
+            for (const id in stations) {
+                if (!globalGraph[id]) continue; // 座標不正などでグラフに存在しない駅は除外
+                const pName = parseName(stations[id].name).primary;
+                if (!nameGroups[pName]) nameGroups[pName] = [];
+                nameGroups[pName].push(id);
+            }
+
+            function addVirtualEdge(idA, idB, virtualType) {
+                if (!idA || !idB || idA === idB) return;
+                if (!globalGraph[idA] || !globalGraph[idB]) return;
+                const already = globalGraph[idA].some(e => e.isVirtual && e.to === idB && e.virtualType === virtualType);
+                if (already) return;
+                const cost = VIRTUAL_TRANSFER_COST[virtualType] || 500;
+                const routeMarker = { number: '__VIRTUAL_' + virtualType + '__', name: '', isVirtual: true, virtualType: virtualType };
+                globalGraph[idA].push({ to: idB, route: routeMarker, realDist: cost, speedWeight: 1, fareCost: 1, isVirtual: true, virtualType: virtualType });
+            }
+
+            for (const pName in nameGroups) {
+                const ids = nameGroups[pName];
+                if (ids.length < 2) continue;
+                for (let i = 0; i < ids.length; i++) {
+                    for (let j = i + 1; j < ids.length; j++) {
+                        addVirtualEdge(ids[i], ids[j], 'sameName');
+                        addVirtualEdge(ids[j], ids[i], 'sameName');
+                    }
+                }
+            }
+
+            for (const id in stations) {
+                const conns = stations[id].connections;
+                if (!Array.isArray(conns) || conns.length === 0) continue;
+                conns.forEach(otherId => {
+                    if (!stations[otherId]) return;
+                    addVirtualEdge(id, otherId, 'connection');
+                    addVirtualEdge(otherId, id, 'connection');
+                });
+            }
+
+            if (bounds.length > 0) map.fitBounds(L.latLngBounds(bounds).pad(0.08));
+
+            const datalist = document.getElementById('stations-datalist');
+            if (datalist) {
+                datalist.innerHTML = '';
+                const uniqueNames = [...new Set(Object.values(stations).map(s => parseName(s.name).primary))].sort();
+                uniqueNames.forEach(name => { const opt = document.createElement('option'); opt.value = name; datalist.appendChild(opt); });
+            }
+            updateSidebarList();
+        }
+
+        function findShortestPath(startId, endId, priorityMode) {
+            let distances = {};
+            let backtrace = {};
+            let pq = [];
+
+            const startKey = startId + '_NONE';
+            distances[startKey] = 0;
+            pq.push({
+                stationId: startId,
+                lastRouteNum: 'NONE',
+                cost: 0,
+                usedRoutes: new Set(),
+                key: startKey
+            });
+
+            let targetReachedKey = null;
+            let minTargetCost = Infinity;
+
+            while (pq.length > 0) {
+                pq.sort((a, b) => a.cost - b.cost);
+                let curr = pq.shift();
+
+                if (curr.cost > distances[curr.key]) continue;
+
+                if (curr.stationId === endId) {
+                    if (curr.cost < minTargetCost) {
+                        minTargetCost = curr.cost;
+                        targetReachedKey = curr.key;
+                    }
+                    continue;
+                }
+
+                let neighbors = globalGraph[curr.stationId] || [];
+                for (let edge of neighbors) {
+                    const routeNum = edge.route.number || 'UNKNOWN';
+
+                    // 仮想辺（同名駅・接続駅の徒歩乗換）は運休/除外系統の対象外
+                    if (!edge.isVirtual && excludedRoutes.has(routeNum)) continue;
+
+                    let isTransfer = curr.lastRouteNum !== 'NONE' && curr.lastRouteNum !== routeNum;
+
+                    let edgeCost;
+                    if (edge.isVirtual) {
+                        // 仮想辺は運賃・速度による重み付けを行わず、固定の徒歩コストのみ
+                        edgeCost = edge.realDist;
+                    } else {
+                        edgeCost = edge.realDist;
+                        if (priorityMode === 'fare') {
+                            edgeCost *= edge.fareCost;
+                        } else if (priorityMode === 'time') {
+                            edgeCost *= edge.speedWeight;
+                        } else if (priorityMode === 'balanced') {
+                            // おすすめモード：特急重視ほど極端ではないが、速い系統を緩やかに優遇
+                            edgeCost *= (edge.speedWeight + 1) / 2;
+                        }
+                    }
+
+                    let transferPenalty = 0;
+                    if (isTransfer) {
+                        if (priorityMode === 'transfer') {
+                            transferPenalty = 500000;
+                        } else if (priorityMode === 'fare') {
+                            transferPenalty = 4000;
+                        } else if (priorityMode === 'balanced') {
+                            // 乗換回数重視ほど厳しくないが、無闇な乗換は避けるバランス設定
+                            transferPenalty = 3000;
+                        } else {
+                            transferPenalty = 2000;
+                        }
+                    }
+
+                    let nextUsedRoutes = new Set(curr.usedRoutes);
+                    if (curr.lastRouteNum !== 'NONE') nextUsedRoutes.add(curr.lastRouteNum);
+
+                    if (isTransfer && nextUsedRoutes.has(routeNum)) {
+                        transferPenalty += 300000;
+                    }
+
+                    let newCost = curr.cost + edgeCost + transferPenalty;
+                    const nextKey = edge.to + '_' + routeNum;
+
+                    if (distances[nextKey] === undefined || newCost < distances[nextKey]) {
+                        distances[nextKey] = newCost;
+                        backtrace[nextKey] = {
+                            fromKey: curr.key,
+                            fromStation: curr.stationId,
+                            toStation: edge.to,
+                            route: edge.route
+                        };
+                        pq.push({
+                            stationId: edge.to,
+                            lastRouteNum: routeNum,
+                            cost: newCost,
+                            usedRoutes: nextUsedRoutes,
+                            key: nextKey
+                        });
+                    }
+                }
+            }
+
+            if (!targetReachedKey) return null;
+
+            let path = [];
+            let currKey = targetReachedKey;
+            while (backtrace[currKey]) {
+                let step = backtrace[currKey];
+                path.unshift({ to: step.toStation, from: step.fromStation, route: step.route });
+                currKey = step.fromKey;
+            }
+            return path;
+        }
+
+        function findRouteWithWaypoint(startId, waypointId, endId, priorityMode) {
+            if (!waypointId) { return findShortestPath(startId, endId, priorityMode); }
+            let part1 = findShortestPath(startId, waypointId, priorityMode); if (!part1) return null;
+            let part2 = findShortestPath(waypointId, endId, priorityMode); if (!part2) return null;
+            return part1.concat(part2);
+        }
+
+        function resetRouteHighlight() {
+            routeFeaturesMap.forEach(seg => seg.polyline.setStyle({ color: seg.color, weight: 5, opacity: 0.85 }));
+            virtualHighlightLayers.forEach(layer => routeLayerGroup.removeLayer(layer));
+            virtualHighlightLayers = [];
+        }
+
+        function executeRouteSearch() {
+            const startName = document.getElementById('route-start').value.trim();
+            const waypointName = document.getElementById('route-waypoint').value.trim();
+            const endName = document.getElementById('route-end').value.trim();
+            const priorityMode = document.getElementById('route-priority').value;
+            const resultsEl = document.getElementById('search-results');
+
+            if (!startName || !endName) return;
+
+            let startId = null, waypointId = null, endId = null;
+            const stations = globalData.stations || {};
+            for (let id in stations) {
+                const pName = parseName(stations[id].name).primary;
+                if (pName === startName) startId = id;
+                if (pName === waypointName) waypointId = id;
+                if (pName === endName) endId = id;
+            }
+
+            if (!startId || !endId || startId === endId) return;
+
+            const path = findRouteWithWaypoint(startId, waypointId, endId, priorityMode);
+            if (!path || path.length === 0) {
+                resultsEl.innerHTML = `<p style="color:#e53e3e; font-size:0.85rem; text-align:center;">⚠️ 指定された条件、または除外系統を回避するルートが見つかりませんでした。</p>`;
+                resetRouteHighlight();
+                return;
+            }
+
+            routeFeaturesMap.forEach(seg => seg.polyline.setStyle({ color: '#3f3f46', weight: 3, opacity: 0.15 }));
+            virtualHighlightLayers.forEach(layer => routeLayerGroup.removeLayer(layer));
+            virtualHighlightLayers = [];
+
+            path.forEach(step => {
+                if (step.route.isVirtual) {
+                    // 同名駅・接続駅どうしの徒歩乗換は破線で地図上に表示する
+                    const p1 = globalStationCoords[step.from]; const p2 = globalStationCoords[step.to];
+                    if (p1 && p2) {
+                        const dashLine = L.polyline([p1, p2], {
+                            color: '#ecc94b', weight: 4, opacity: 0.9, dashArray: '6, 8'
+                        }).addTo(routeLayerGroup);
+                        dashLine.bringToFront();
+                        virtualHighlightLayers.push(dashLine);
+                    }
+                    return;
+                }
+                const targets = routeFeaturesMap.filter(seg =>
+                    seg.routeObj === step.route &&
+                    ((seg.fromId === step.from && seg.toId === step.to) || (seg.fromId === step.to && seg.toId === step.from))
+                );
+                targets.forEach(target => {
+                    target.polyline.setStyle({ color: target.color, weight: 8, opacity: 1.0 });
+                    target.polyline.bringToFront();
+                });
+            });
+
+            let html = `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <h4 style="margin:0; font-size:0.9rem; color:#1a202c;">🔍 探索完了ルート</h4>
+                <button onclick="resetRouteHighlight()" style="cursor:pointer; background:#edf2f7; border:none; padding:4px 10px; border-radius:4px; font-size:0.75rem; font-weight:bold;">クリア</button>
+            </div>
+        `;
+            let segments = [];
+
+            path.forEach((step) => {
+                const fromName = parseName(stations[step.from].name).primary;
+                const toName = parseName(stations[step.to].name).primary;
+
+                if (step.route.isVirtual) {
+                    segments.push({ type: 'virtual', virtualType: step.route.virtualType, startStation: fromName, endStation: toName });
+                    return;
+                }
+
+                const numStr = String(step.route.number || '').trim().split('|')[0];
+                const routeDisp = /^\d+$/.test(numStr) ? numStr + '系統' : numStr || '指定路線';
+                const last = segments[segments.length - 1];
+
+                if (last && last.type === 'ride' && last.routeNumber === step.route.number) {
+                    last.endStation = toName; last.count++;
+                } else {
+                    segments.push({ type: 'ride', routeNumber: step.route.number, routeDisp: routeDisp, startStation: fromName, endStation: toName, color: intToHexColor(step.route.color), count: 1 });
+                }
+            });
+
+            segments.forEach((seg, idx) => {
+                if (seg.type === 'virtual') {
+                    const label = seg.virtualType === 'sameName'
+                        ? '同名の別駅として乗換'
+                        : '乗換接続駅を利用して乗換';
+                    html += `<div class="transfer-node" style="background:#fffceb; border-left:3px solid #ecc94b;">🔀 ${seg.startStation} → ${seg.endStation}（${label}）</div>`;
+                    return;
+                }
+                if (idx > 0 && segments[idx - 1].type === 'ride') {
+                    html += `<div class="transfer-node">🚶‍♂️ ${seg.startStation} 駅で乗り換え</div>`;
+                }
+                html += `
+                <div class="result-card" style="border-left: 6px solid ${seg.color};">
+                    <strong style="color:#1a202c; font-size:0.9rem;">${seg.routeDisp}</strong>
+                    <div style="margin-top:4px; font-size:0.85rem; color:#4a5568;">${seg.startStation} ➔ ${seg.endStation}</div>
+                    <div style="font-size:0.75rem; color:#718096; margin-top:4px;">⏱️ ${seg.count} 駅間を移動</div>
+                </div>`;
+            });
+            resultsEl.innerHTML = html;
+
+            let mapBoundsPoints = [];
+            path.forEach(step => { mapBoundsPoints.push(globalStationCoords[step.from]); mapBoundsPoints.push(globalStationCoords[step.to]); });
+            if (mapBoundsPoints.length > 0) map.fitBounds(L.latLngBounds(mapBoundsPoints).pad(0.2));
+        }
+
+        function toggleRouteExclude(routeNum, checked) {
+            if (checked) { excludedRoutes.add(routeNum); }
+            else { excludedRoutes.delete(routeNum); }
+            saveExcludedRoutes();
+        }
+
+        // 系統リストだけをインタラクティブに再描画する内部関数
+        function filterExcludeList(query) {
+            lastExcludeQuery = query.toLowerCase();
+            const container = document.getElementById('exclude-list-container');
+            if (!container || !globalData) return;
+
+            const routes = globalData.routes || [];
+            let excludeHtml = "";
+            const seenNums = new Set();
+
+            routes.forEach(r => {
+                const num = String(r.number || '').trim();
+                if (!num || seenNums.has(num)) return;
+                seenNums.add(num);
+
+                const parsed = parseName(r.name);
+                const dispText = `[${num}] ${parsed.primary}`;
+                const isMatch = dispText.toLowerCase().includes(lastExcludeQuery);
+                const isChecked = excludedRoutes.has(num);
+
+                // 検索にマッチするか、すでにチェックされているものはリストに残す（見失い防止）
+                if (isMatch || isChecked) {
+                    excludeHtml += `
+                    <label class="exclude-item">
+                        <input type="checkbox" ${isChecked ? "checked" : ""} onchange="toggleRouteExclude('${num}', this.checked)">
+                        <span>${dispText}</span>
+                    </label>
+                `;
+                }
+            });
+
+            container.innerHTML = excludeHtml || '<span style="color:#a0aec0;font-size:0.75rem;">該当する系統がありません</span>';
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            document.getElementById('tab-routes').classList.toggle('active', tab === 'routes');
+            document.getElementById('tab-stations').classList.toggle('active', tab === 'stations');
+            document.getElementById('tab-search').classList.toggle('active', tab === 'search');
+            document.getElementById('search-box-wrapper').style.display = (tab === 'search') ? 'none' : 'block';
+            resetRouteHighlight(); updateSidebarList();
+        }
+
+        function updateSidebarList() {
+            const listContent = document.getElementById('list-content'); listContent.innerHTML = '';
+            if (!globalData) return;
+            const searchQuery = document.getElementById('search-input').value.toLowerCase();
+
+            if (currentTab === 'search') {
+                listContent.innerHTML = `
+                <div style="padding: 2px;">
+                    <div class="search-form-group">
+                        <label>🪙 優先条件</label>
+                        <select id="route-priority" class="search-box">
+                            <option value="balanced" selected>⭐ おすすめ（バランス重視）</option>
+                            <option value="transfer">🔄 乗換回数をできるだけ減らす (直通優先)</option>
+                            <option value="time">🕒 所要時間短縮（特急等優先）</option>
+                            <option value="fare">🪙 運賃安さ重視</option>
+                        </select>
+                    </div>
+                    <div class="search-form-group"><label>🚉 出発駅</label><input type="text" id="route-start" list="stations-datalist" class="search-box" placeholder="出発駅名を入力..."></div>
+                    <div class="search-form-group"><label>📍 経由駅 (任意)</label><input type="text" id="route-waypoint" list="stations-datalist" class="search-box" placeholder="経由させたい駅名を入力..."></div>
+                    <div class="search-form-group"><label>🚉 到着駅</label><input type="text" id="route-end" list="stations-datalist" class="search-box" placeholder="到着駅名を入力..."></div>
+                    
+                    <div class="search-form-group" style="margin-top:14px;">
+                        <label>⚠️ 運休・除外系統の設定</label>
+                        <input type="text" class="exclude-search" placeholder="系統名・番号でリストを絞り込み..." oninput="filterExcludeList(this.value)" value="${lastExcludeQuery}">
+                        <div class="exclude-container" id="exclude-list-container"></div>
+                    </div>
+
+                    <button onclick="executeRouteSearch()" class="search-btn" style="margin-top:8px;">🔍 最適ルート探索を開始</button>
+                    <div id="search-results" style="margin-top:16px;"></div>
+                </div>`;
+                // 初回リスト構築を実行
+                filterExcludeList(lastExcludeQuery);
+                return;
+            }
+
+            if (currentTab === 'routes') {
+                const uniqueRoutes = []; const seen = new Set();
+                routeFeaturesMap.forEach(r => { if (!seen.has(r.routeObj)) { seen.add(r.routeObj); uniqueRoutes.push(r); } });
+                const filtered = uniqueRoutes.filter(r => r.routeObj.name.toLowerCase().includes(searchQuery));
+
+                if (filtered.length === 0) { listContent.innerHTML = '<p style="text-align:center; color:#a0aec0; font-size:0.85rem;">該当する路線はありません</p>'; return; }
+
+                filtered.forEach(r => {
+                    const item = document.createElement('div'); item.className = 'list-item route-item'; item.style.borderLeftColor = r.color;
+                    const parsed = parseName(r.routeObj.name);
+                    item.innerHTML = `<div class="item-title">${parsed.primary}</div><div class="item-sub">${parsed.sub || 'MTR 路線系統'}</div>`;
+                    item.onclick = () => {
+                        const points = []; routeFeaturesMap.filter(seg => seg.routeObj === r.routeObj).forEach(seg => points.push(...seg.latlngs));
+                        if (points.length > 0) map.fitBounds(L.latLngBounds(points).pad(0.2));
+                    };
+                    listContent.appendChild(item);
+                });
+            } else {
+                const stations = globalData.stations || {};
+                const arr = [];
+                for (const id in stations) { arr.push({ id, ...stations[id], parsed: parseName(stations[id].name) }); }
+                const filtered = arr.filter(s => s.name.toLowerCase().includes(searchQuery)).sort((a, b) => a.parsed.primary.localeCompare(b.parsed.primary, 'ja'));
+
+                if (filtered.length === 0) { listContent.innerHTML = '<p style="text-align:center; color:#a0aec0; font-size:0.85rem;">該当する駅はありません</p>'; return; }
+
+                filtered.forEach(s => {
+                    const item = document.createElement('div'); item.className = 'list-item';
+                    item.innerHTML = `<div class="item-title">${s.parsed.primary}</div><div class="item-sub">X: ${s.x} / Z: ${s.z}</div>${buildRidershipHtml(s.name)}`;
+                    item.onclick = () => { const m = stationMarkersMap[s.id]; if (m) { map.setView(m.getLatLng(), 1); m.openPopup(); } };
+                    listContent.appendChild(item);
+                });
+            }
+        }
+        document.getElementById('search-input').addEventListener('input', updateSidebarList);
+    </script>
+</body>
+
+</html>
