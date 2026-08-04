@@ -8,359 +8,429 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root {
-            --sidebar-width: 350px;
-            --primary-color: #1a202c;
-            --accent-color: #3182ce;
-            --bg-color: #ffffff;
-            --sidebar-bg: #ffffff;
-            --text-color: #2d3748;
-            --text-muted: #718096;
-            --border-color: #e2e8f0;
+            --sidebar-width: 370px;
+            --primary-accent: #007aff;
+            --bg-glass: rgba(255, 255, 255, 0.85);
+            --card-bg: rgba(255, 255, 255, 0.95);
+            --text-main: #1c1c1e;
+            --text-sub: #8e8e93;
+            --border-light: rgba(60, 60, 67, 0.12);
+            --input-bg: rgba(118, 118, 128, 0.08);
+            --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.08);
+            --radius-main: 16px;
+            --radius-sm: 10px;
         }
 
         * {
             box-sizing: border-box;
+            -webkit-font-smoothing: antialiased;
         }
 
-        body,
-        html {
+        body, html {
             margin: 0;
             padding: 0;
             width: 100%;
             height: 100%;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
             overflow: hidden;
-            background: var(--bg-color);
-            color: var(--text-color);
+            background: #f2f2f7;
+            color: var(--text-main);
         }
 
         #app {
             display: flex;
             width: 100%;
             height: 100%;
+            position: relative;
         }
 
-        /* サイドバー */
+        /* Appleマップ風フローティングサイドバー */
         #sidebar {
             width: var(--sidebar-width);
-            height: 100%;
-            background: var(--sidebar-bg);
-            box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15);
+            height: calc(100% - 32px);
+            margin: 16px;
+            position: absolute;
+            top: 0;
+            left: 0;
+            background: var(--bg-glass);
+            backdrop-filter: blur(25px) saturate(180%);
+            -webkit-backdrop-filter: blur(25px) saturate(180%);
+            border-radius: 24px;
+            box-shadow: var(--shadow-soft);
+            border: 1px solid rgba(255, 255, 255, 0.6);
             display: flex;
             flex-direction: column;
             z-index: 1010;
+            overflow: hidden;
+            transition: all 0.3s ease;
         }
 
         .header {
-            padding: 24px 20px;
-            background: var(--primary-color);
-            color: white;
-            border-bottom: 3px solid var(--accent-color);
+            padding: 20px 20px 14px 20px;
+            background: transparent;
         }
 
         .header h1 {
             margin: 0;
-            font-size: 1.3rem;
+            font-size: 1.35rem;
             font-weight: 700;
-            letter-spacing: 0.5px;
+            letter-spacing: -0.5px;
+            color: var(--text-main);
         }
 
         .header p {
-            margin: 6px 0 0 0;
-            font-size: 0.8rem;
-            opacity: 0.7;
-            font-weight: 300;
+            margin: 4px 0 0 0;
+            font-size: 0.78rem;
+            color: var(--text-sub);
+            font-weight: 400;
         }
 
-        /* ステータスエリア */
+        /* ステータスバナー */
         .status-area {
-            padding: 14px 20px;
-            background: #f7fafc;
-            border-bottom: 1px solid var(--border-color);
-            font-size: 0.8rem;
-            line-height: 1.5;
-            color: #4a5568;
+            margin: 0 16px 12px 16px;
+            padding: 10px 14px;
+            background: rgba(255, 255, 255, 0.6);
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-light);
+            font-size: 0.78rem;
+            line-height: 1.4;
+            color: #48484a;
         }
 
         .status-retry-btn {
             margin-top: 6px;
-            padding: 5px 12px;
-            background: var(--accent-color);
+            padding: 6px 12px;
+            background: var(--primary-accent);
             color: white;
             border: none;
-            border-radius: 4px;
+            border-radius: 8px;
             cursor: pointer;
             font-size: 0.75rem;
-            font-weight: bold;
+            font-weight: 600;
         }
 
-        /* 手動ドロップ */
+        /* ドロップ領域 */
         .upload-area {
-            padding: 12px 20px;
-            border-bottom: 1px solid var(--border-color);
-            background: #f0f4f8;
+            margin: 0 16px 10px 16px;
+            padding: 10px;
+            border-radius: var(--radius-sm);
+            background: rgba(0, 122, 255, 0.05);
+            border: 1px dashed rgba(0, 122, 255, 0.3);
             text-align: center;
             cursor: pointer;
             transition: background 0.2s;
         }
 
         .upload-area:hover {
-            background: #e2e8f0;
+            background: rgba(0, 122, 255, 0.1);
         }
 
-        .upload-area input {
-            display: none;
+        .upload-area input { display: none; }
+
+        .upload-hint {
+            font-size: 0.75rem;
+            color: var(--primary-accent);
+            font-weight: 600;
         }
 
+        /* 利用者データパネル */
         .ridership-area {
-            border-bottom: 1px solid var(--border-color);
-            background: #fffceb;
+            margin: 0 16px 12px 16px;
+            border-radius: var(--radius-sm);
+            background: rgba(255, 149, 0, 0.08);
+            border: 1px solid rgba(255, 149, 0, 0.2);
+            overflow: hidden;
         }
 
         .ridership-toggle {
-            padding: 10px 20px;
+            padding: 10px 14px;
             font-size: 0.8rem;
-            font-weight: 700;
-            color: #975a16;
+            font-weight: 600;
+            color: #c77700;
             cursor: pointer;
             user-select: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         .ridership-panel {
-            padding: 0 20px 14px 20px;
+            padding: 0 14px 12px 14px;
         }
 
         .ridership-panel input {
             width: 100%;
-            padding: 7px 10px;
-            border: 1px solid #e0c56b;
-            border-radius: 6px;
+            padding: 8px 10px;
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
             font-size: 0.78rem;
             margin-bottom: 6px;
-            box-sizing: border-box;
+            outline: none;
         }
 
         .ridership-panel label {
             font-size: 0.7rem;
-            color: #975a16;
+            color: #8e8e93;
             display: block;
             margin-bottom: 2px;
-        }
-
-        .ridership-panel .search-btn {
-            width: 100%;
-        }
-
-        .ridership-info-block {
-            margin-top: 6px;
-            padding-top: 6px;
-            border-top: 1px dashed #cbd5e0;
-            font-size: 0.75rem;
-            color: #4a5568;
-            line-height: 1.6;
-        }
-
-        .upload-hint {
-            font-size: 0.8rem;
-            color: #2b6cb0;
             font-weight: 600;
-            display: block;
         }
 
+        /* Apple風セグメントコントロール（タブ） */
+        .tab-container {
+            display: flex;
+            margin: 0 16px 12px 16px;
+            padding: 3px;
+            background: rgba(120, 120, 128, 0.12);
+            border-radius: 12px;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 8px 0;
+            text-align: center;
+            cursor: pointer;
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--text-sub);
+            border-radius: 9px;
+            transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        .tab.active {
+            color: var(--text-main);
+            background: #ffffff;
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12), 0 3px 1px rgba(0, 0, 0, 0.04);
+        }
+
+        /* 検索フォーム */
         .controls {
-            padding: 16px 20px;
-            border-bottom: 1px solid var(--border-color);
-            background: #fff;
+            padding: 0 16px 12px 16px;
         }
 
         .search-box {
             width: 100%;
             padding: 10px 14px;
-            border: 1px solid #cbd5e0;
-            border-radius: 8px;
-            font-size: 0.9rem;
-            color: var(--text-color);
-            margin-bottom: 2px;
+            background: var(--input-bg);
+            border: 1px solid transparent;
+            border-radius: var(--radius-sm);
+            font-size: 0.88rem;
+            color: var(--text-main);
+            outline: none;
+            transition: all 0.2s;
         }
 
         .search-box:focus {
-            border-color: var(--accent-color);
-            outline: none;
-            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.2);
+            background: #ffffff;
+            border-color: var(--primary-accent);
+            box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
         }
 
-        /* タブ */
-        .tab-container {
-            display: flex;
-            background: #f7fafc;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .tab {
-            flex: 1;
-            padding: 14px 10px;
-            text-align: center;
-            cursor: pointer;
-            font-size: 0.85rem;
-            font-weight: 700;
-            color: #a0aec0;
-            border-bottom: 3px solid transparent;
-        }
-
-        .tab.active {
-            color: var(--accent-color);
-            border-bottom-color: var(--accent-color);
-            background: white;
-        }
-
-        /* リスト表示部 */
+        /* リスト表示エリア */
         .list-viewport {
             flex: 1;
             overflow-y: auto;
-            padding: 16px 20px;
-            background: #fff;
+            padding: 0 16px 16px 16px;
         }
 
+        /* リストカード (Apple Style) */
         .list-item {
             padding: 12px 14px;
-            margin-bottom: 10px;
-            border-radius: 8px;
-            background: #f8fafc;
+            margin-bottom: 8px;
+            border-radius: var(--radius-sm);
+            background: var(--card-bg);
             cursor: pointer;
             font-size: 0.85rem;
-            border-left: 4px solid #e2e8f0;
-            border-top: 1px solid #edf2f7;
-            border-right: 1px solid #edf2f7;
-            border-bottom: 1px solid #edf2f7;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+            border: 1px solid var(--border-light);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
         }
 
         .list-item:hover {
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-            background: #fff;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
         }
 
         .list-item.route-item {
-            border-left-width: 6px;
+            border-left: 5px solid var(--primary-accent);
         }
 
         .item-title {
             font-weight: 700;
-            color: #2d3748;
-            margin-bottom: 4px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            color: var(--text-main);
+            margin-bottom: 2px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
 
         .item-sub {
             font-size: 0.75rem;
-            color: var(--text-muted);
+            color: var(--text-sub);
+        }
+
+        /* 停車駅タイムライン（Appleマップ風） */
+        .station-timeline {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border-light);
+            display: none;
+        }
+
+        .station-timeline.open {
+            display: block;
+        }
+
+        .timeline-row {
+            display: flex;
+            align-items: center;
+            padding: 6px 4px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .timeline-row:hover {
+            background: rgba(0, 122, 255, 0.08);
+        }
+
+        .timeline-bullet {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            border: 2px solid var(--primary-accent);
+            background: #fff;
+            margin-right: 10px;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .timeline-row:not(:last-child) .timeline-bullet::after {
+            content: '';
+            position: absolute;
+            top: 10px;
+            left: 2px;
+            width: 2px;
+            height: 18px;
+            background: var(--border-light);
+        }
+
+        .timeline-name {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-main);
         }
 
         /* マップ領域 */
         #map-container {
-            flex: 1;
+            width: 100%;
             height: 100%;
-            background: var(--bg-color);
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
         }
 
         #map {
             width: 100%;
             height: 100%;
-            background: var(--bg-color);
+            background: #e5e5ea;
         }
 
-        /* 検索フォーム */
+        /* 検索フォームグループ */
         .search-form-group {
             margin-bottom: 12px;
         }
 
         .search-form-group label {
             display: block;
-            font-size: 0.75rem;
+            font-size: 0.72rem;
             font-weight: 700;
-            color: #4a5568;
+            color: var(--text-sub);
             margin-bottom: 4px;
             text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .search-btn {
             width: 100%;
             padding: 12px;
-            background: var(--accent-color);
+            background: var(--primary-accent);
             color: white;
             border: none;
-            border-radius: 8px;
-            font-weight: 700;
+            border-radius: var(--radius-sm);
+            font-weight: 600;
             cursor: pointer;
             font-size: 0.9rem;
-            box-shadow: 0 2px 4px rgba(49, 130, 206, 0.2);
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+            transition: opacity 0.2s;
+        }
+
+        .search-btn:hover {
+            opacity: 0.9;
         }
 
         .result-card {
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            background: #ffffff;
-            padding: 14px;
-            margin-bottom: 10px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            border: 1px solid var(--border-light);
+            border-radius: var(--radius-sm);
+            background: var(--card-bg);
+            padding: 12px 14px;
+            margin-bottom: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
         }
 
         .transfer-node {
             text-align: center;
-            margin: 12px 0;
+            margin: 10px 0;
             font-size: 0.75rem;
-            color: #4a5568;
-            font-weight: 700;
-            background: #edf2f7;
+            color: var(--text-sub);
+            font-weight: 600;
+            background: rgba(120, 120, 128, 0.08);
             padding: 6px;
-            border-radius: 6px;
-            border: 1px dashed #cbd5e0;
+            border-radius: 8px;
         }
 
-        /* 除外リスト用スタイル */
         .exclude-container {
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            padding: 10px;
-            max-height: 160px;
+            border: 1px solid var(--border-light);
+            border-radius: var(--radius-sm);
+            padding: 8px;
+            max-height: 140px;
             overflow-y: auto;
-            background: #f8fafc;
+            background: rgba(255, 255, 255, 0.6);
             margin-top: 4px;
         }
 
-        .exclude-item {
-            display: flex;
-            align-items: center;
-            font-size: 0.8rem;
-            margin-bottom: 6px;
-            cursor: pointer;
-        }
-
-        .exclude-item input {
-            margin-right: 8px;
-            cursor: pointer;
-        }
-
         .exclude-search {
-            padding: 6px 10px;
+            padding: 8px 10px;
             font-size: 0.8rem;
-            border-radius: 6px;
-            border: 1px solid #cbd5e0;
+            border-radius: 8px;
+            border: 1px solid var(--border-light);
+            background: var(--input-bg);
             width: 100%;
             margin-bottom: 4px;
+            outline: none;
+        }
+
+        .ridership-info-block {
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px dashed var(--border-light);
+            font-size: 0.72rem;
+            color: var(--text-sub);
+            line-height: 1.5;
         }
 
         .leaflet-tooltip-custom {
-            background: #1a202c !important;
+            background: rgba(28, 28, 30, 0.85) !important;
+            backdrop-filter: blur(8px) !important;
             color: white !important;
             border: none !important;
-            border-radius: 4px !important;
-            font-weight: bold !important;
+            border-radius: 6px !important;
+            font-weight: 600 !important;
             font-size: 11px !important;
             padding: 4px 8px !important;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3) !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
         }
     </style>
 </head>
@@ -370,7 +440,7 @@
     <div id="app">
         <div id="sidebar">
             <div class="header">
-                <h1>MTR 路線図・駅マップ</h1>
+                <h1>MTR 路線図・マップ</h1>
                 <p>Minecraft Transit Railway Visualizer</p>
             </div>
 
@@ -379,12 +449,15 @@
             </div>
 
             <div class="upload-area" id="drop-zone" onclick="document.getElementById('file-input').click()">
-                <span class="upload-hint">📁 data.json の手動ドロップ・選択も可能</span>
+                <span class="upload-hint">📁 data.json の手動ドロップ・選択</span>
                 <input type="file" id="file-input" accept=".json">
             </div>
 
             <div class="ridership-area">
-                <div class="ridership-toggle" onclick="toggleRidershipPanel()" id="ridership-toggle-btn">📊 利用者データ連携 ▾</div>
+                <div class="ridership-toggle" onclick="toggleRidershipPanel()" id="ridership-toggle-btn">
+                    <span>📊 利用者データ連携</span>
+                    <span id="ridership-arrow">▾</span>
+                </div>
                 <div class="ridership-panel" id="ridership-panel" style="display:none;">
                     <label>スプレッドシートID</label>
                     <input type="text" id="ridership-sheet-id" placeholder="スプレッドシートのID">
@@ -392,21 +465,23 @@
                     <input type="text" id="ridership-gid" placeholder="例: 1591757481, 0">
                     <label>GAS Web App URL（任意）</label>
                     <input type="text" id="ridership-gas-url" placeholder="https://script.google.com/macros/s/.../exec">
-                    <button class="search-btn" onclick="loadRidershipData()">🔄 利用者データを読み込む</button>
-                    <div id="ridership-status" style="font-size:0.72rem; color:#718096; margin-top:6px; line-height:1.5;"></div>
+                    <button class="search-btn" onclick="loadRidershipData()" style="padding:8px; font-size:0.8rem;">🔄 利用者データを読み込む</button>
+                    <div id="ridership-status" style="font-size:0.72rem; color:var(--text-sub); margin-top:6px; line-height:1.4;"></div>
                 </div>
             </div>
 
             <div class="controls" id="search-box-wrapper">
-                <input type="text" id="search-input" class="search-box" placeholder="駅名・路線名で絞り込み...">
+                <input type="text" id="search-input" class="search-box" placeholder="🔍 駅名・路線名で絞り込み...">
             </div>
+
             <div class="tab-container">
                 <div class="tab active" id="tab-routes" onclick="switchTab('routes')">路線一覧</div>
                 <div class="tab" id="tab-stations" onclick="switchTab('stations')">駅一覧</div>
                 <div class="tab" id="tab-search" onclick="switchTab('search')">乗換案内</div>
             </div>
+
             <div class="list-viewport" id="list-content">
-                <p style="text-align:center; color:#a0aec0; font-size:0.85rem; margin-top:40px;">データ読み込み中...</p>
+                <p style="text-align:center; color:var(--text-sub); font-size:0.85rem; margin-top:40px;">データ読み込み中...</p>
             </div>
         </div>
 
@@ -436,10 +511,8 @@
         let lastExcludeQuery = "";
         let virtualHighlightLayers = [];
 
-        // 同名駅・接続駅の徒歩乗換コスト設定
         const VIRTUAL_TRANSFER_COST = { sameName: 250, connection: 150 };
 
-        // 利用者データ関連
         const RIDERSHIP_DEFAULT_SHEET_ID = '17Q0-Q7LynBNk89kttIWdOVTD-ktQaL_ItM91vgBpUhE';
         const RIDERSHIP_DEFAULT_GID = '1591757481';
         let ridershipMap = {};
@@ -482,8 +555,11 @@
                 maxZoom: 4,
                 zoomDelta: 0.5,
                 zoomSnap: 0.5,
-                attributionControl: false
+                attributionControl: false,
+                zoomControl: false
             });
+
+            L.control.zoom({ position: 'bottomright' }).addTo(map);
 
             if (!map.getPane('stationsPane')) {
                 const stationsPane = map.createPane('stationsPane');
@@ -511,22 +587,21 @@
                     let res = await fetch(t.url, { method: 'GET', mode: 'cors' });
                     if (res.ok) {
                         let data = await res.json();
-                        statusEl.innerHTML = `✅ 📡 正常に同期しました (${t.label})`;
-                        statusEl.style.background = "#e6fffa"; statusEl.style.color = "#234e52";
+                        statusEl.innerHTML = `✅ 📡 同期完了 (${t.label})`;
+                        statusEl.style.background = "rgba(52, 199, 89, 0.12)";
+                        statusEl.style.color = "#248a3d";
                         renderMtrMap(data);
                         return;
                     }
-                } catch (e) {
-                    console.warn(`Fetch fallback matching failed for: ${t.url}`);
-                }
+                } catch (e) { console.warn(`Fetch fallback failed: ${t.url}`); }
             }
 
             statusEl.innerHTML = `
-                <div style="font-weight: bold; color: #e53e3e;">📡 自動同期を待機中...</div>
-                <div style="font-size: 11px; color: #718096; margin-top:2px;">手動で data.json を読み込むこともできます。</div>
-                <button class="status-retry-btn" onclick="loadDataAuto()">再接続を試行</button>
+                <div style="font-weight: 600; color: #ff3b30;">📡 自動同期待機中</div>
+                <div style="font-size: 0.72rem; color: #8e8e93; margin-top:2px;">data.json を直接ドロップできます</div>
+                <button class="status-retry-btn" onclick="loadDataAuto()">再試行</button>
             `;
-            statusEl.style.background = "#fff5f5"; statusEl.style.color = "#9b2c2c";
+            statusEl.style.background = "rgba(255, 59, 48, 0.1)";
         }
 
         window.addEventListener('DOMContentLoaded', loadDataAuto);
@@ -534,10 +609,10 @@
         const fileInput = document.getElementById('file-input');
         const dropZone = document.getElementById('drop-zone');
         fileInput.addEventListener('change', (e) => { if (e.target.files.length > 0) readFile(e.target.files[0]); });
-        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.background = "#cbd5e0"; });
-        dropZone.addEventListener('dragleave', () => { dropZone.style.background = "#f0f4f8"; });
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.background = "rgba(0, 122, 255, 0.15)"; });
+        dropZone.addEventListener('dragleave', () => { dropZone.style.background = "rgba(0, 122, 255, 0.05)"; });
         dropZone.addEventListener('drop', (e) => {
-            e.preventDefault(); dropZone.style.background = "#f0f4f8";
+            e.preventDefault(); dropZone.style.background = "rgba(0, 122, 255, 0.05)";
             if (e.dataTransfer.files.length > 0) readFile(e.dataTransfer.files[0]);
         });
 
@@ -546,19 +621,17 @@
             reader.onload = function (event) {
                 try {
                     const parsedData = JSON.parse(event.target.result);
-                    document.getElementById('connection-status').innerHTML = "📁 手動アップロードデータを適用しました。";
-                    document.getElementById('connection-status').style.background = "#edf2f7";
-                    document.getElementById('connection-status').style.color = "#2d3748";
+                    document.getElementById('connection-status').innerHTML = "📁 アップロードデータを適用しました";
+                    document.getElementById('connection-status').style.background = "rgba(120, 120, 128, 0.12)";
+                    document.getElementById('connection-status').style.color = "#1c1c1e";
                     renderMtrMap(parsedData);
-                } catch (err) {
-                    alert("JSON読み込みエラー: " + err.message);
-                }
+                } catch (err) { alert("JSON読み込みエラー: " + err.message); }
             };
             reader.readAsText(file);
         }
 
         function intToHexColor(num) {
-            if (num === undefined || num === null) return '#718096';
+            if (num === undefined || num === null) return '#8e8e93';
             return '#' + num.toString(16).padStart(6, '0');
         }
 
@@ -574,8 +647,7 @@
         }
 
         function parseCSV(text) {
-            const rows = [];
-            let row = []; let field = ''; let inQuotes = false;
+            const rows = []; let row = []; let field = ''; let inQuotes = false;
             for (let i = 0; i < text.length; i++) {
                 const c = text[i];
                 if (inQuotes) {
@@ -587,7 +659,7 @@
                     if (c === '"') { inQuotes = true; }
                     else if (c === ',') { row.push(field); field = ''; }
                     else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
-                    else if (c === '\r') { /* skip */ }
+                    else if (c === '\r') { }
                     else { field += c; }
                 }
             }
@@ -603,7 +675,7 @@
                 const json = await res.json();
                 return json.values || json;
             }
-            if (!sheetId) throw new Error('スプレッドシートIDが未入力です');
+            if (!sheetId) throw new Error('スプレッドシートID未入力');
             const url = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/gviz/tq?tqx=out:csv${gid ? '&gid=' + encodeURIComponent(gid) : ''}`;
             const res = await fetch(url);
             if (!res.ok) throw new Error('シート取得失敗: HTTP ' + res.status);
@@ -613,10 +685,10 @@
 
         function toggleRidershipPanel() {
             const panel = document.getElementById('ridership-panel');
-            const btn = document.getElementById('ridership-toggle-btn');
+            const arrow = document.getElementById('ridership-arrow');
             const willShow = panel.style.display === 'none';
             panel.style.display = willShow ? 'block' : 'none';
-            btn.textContent = willShow ? '📊 利用者データ連携 ▴' : '📊 利用者データ連携 ▾';
+            arrow.textContent = willShow ? '▴' : '▾';
         }
 
         async function loadRidershipData() {
@@ -630,7 +702,7 @@
             const gasUrl = (gasInput.value || '').trim();
 
             if (!sheetId && !gasUrl) {
-                statusEl.textContent = '⚠️ スプレッドシートID、またはGAS Web App URLを入力してください';
+                statusEl.textContent = '⚠️ スプレッドシートIDまたはURLを入力してください';
                 return;
             }
 
@@ -638,7 +710,7 @@
             try { localStorage.setItem('mtr_ridership_gid', rawGid); } catch (e) { }
             try { localStorage.setItem('mtr_ridership_gas_url', gasUrl); } catch (e) { }
 
-            statusEl.textContent = '📡 データ読み込み中...';
+            statusEl.textContent = '📡 データ取得中...';
             let gids = rawGid ? rawGid.split(/[,;\s]+/).filter(Boolean) : [RIDERSHIP_DEFAULT_GID];
 
             let combinedMap = {};
@@ -682,25 +754,11 @@
 
             if (Object.keys(combinedMap).length > 0) {
                 ridershipMap = combinedMap;
-                try {
-                    localStorage.setItem('mtr_ridership_cache', JSON.stringify({ map: ridershipMap, savedAt: Date.now(), sheetId, gid: rawGid }));
-                } catch (e) { }
-
-                statusEl.textContent = `✅ ${successGidCount}個のシートから計 ${Object.keys(ridershipMap).length} 駅分の利用者データを取得しました`;
+                try { localStorage.setItem('mtr_ridership_cache', JSON.stringify({ map: ridershipMap, savedAt: Date.now() })); } catch (e) { }
+                statusEl.textContent = `✅ ${successGidCount}個のシートから計 ${Object.keys(ridershipMap).length} 駅分のデータを読み込みました`;
                 updateSidebarList();
             } else {
-                statusEl.innerHTML = `❌ 読み込み失敗: ${lastError ? lastError.message : 'データが見つかりませんでした'}`;
-                try {
-                    const cacheRaw = localStorage.getItem('mtr_ridership_cache');
-                    if (cacheRaw) {
-                        const cache = JSON.parse(cacheRaw);
-                        if (cache && cache.map) {
-                            ridershipMap = cache.map;
-                            statusEl.innerHTML += `<br>📦 キャッシュデータ（${Object.keys(ridershipMap).length}駅分）を適用中`;
-                            updateSidebarList();
-                        }
-                    }
-                } catch (e2) { }
+                statusEl.innerHTML = `❌ 取得失敗: ${lastError ? lastError.message : 'データなし'}`;
             }
         }
 
@@ -721,10 +779,10 @@
             if (!info) return '';
             return `
             <div class="ridership-info-block">
-                <div>📖 読み: <strong>${info.yomi || '―'}</strong></div>
+                <div>📖 読み: <strong>${escapeHtml(info.yomi) || '―'}</strong></div>
                 <div>👥 利用客数: <strong>${formatRiderCount(info.riders)}</strong></div>
-                <div>🏅 級: <strong>${info.grade || '―'}</strong> ／ 🔢 定数: <strong>${info.constant || '―'}</strong></div>
-                <div>🌐 所在国: <strong>${info.country || '―'}</strong></div>
+                <div>🏅 級: <strong>${escapeHtml(info.grade) || '―'}</strong> ／ 🔢 定数: <strong>${escapeHtml(info.constant) || '―'}</strong></div>
+                <div>🌐 所在国: <strong>${escapeHtml(info.country) || '―'}</strong></div>
             </div>`;
         }
 
@@ -732,25 +790,16 @@
             const sheetIdInput = document.getElementById('ridership-sheet-id');
             const gidInput = document.getElementById('ridership-gid');
             const gasInput = document.getElementById('ridership-gas-url');
-            const statusEl = document.getElementById('ridership-status');
-
-            let savedSheetId = null, savedGid = null, savedGasUrl = null;
-            try { savedSheetId = localStorage.getItem('mtr_ridership_sheet_id'); } catch (e) { }
-            try { savedGid = localStorage.getItem('mtr_ridership_gid'); } catch (e) { }
-            try { savedGasUrl = localStorage.getItem('mtr_ridership_gas_url'); } catch (e) { }
-
-            sheetIdInput.value = savedSheetId || RIDERSHIP_DEFAULT_SHEET_ID;
-            gidInput.value = savedGid || RIDERSHIP_DEFAULT_GID;
-            gasInput.value = savedGasUrl || '';
 
             try {
+                sheetIdInput.value = localStorage.getItem('mtr_ridership_sheet_id') || RIDERSHIP_DEFAULT_SHEET_ID;
+                gidInput.value = localStorage.getItem('mtr_ridership_gid') || RIDERSHIP_DEFAULT_GID;
+                gasInput.value = localStorage.getItem('mtr_ridership_gas_url') || '';
+
                 const cacheRaw = localStorage.getItem('mtr_ridership_cache');
                 if (cacheRaw) {
                     const cache = JSON.parse(cacheRaw);
-                    if (cache && cache.map) {
-                        ridershipMap = cache.map;
-                        statusEl.textContent = `📦 キャッシュ済みデータ（${Object.keys(ridershipMap).length}駅分）を表示中。`;
-                    }
+                    if (cache && cache.map) ridershipMap = cache.map;
                 }
             } catch (e) { }
 
@@ -758,47 +807,35 @@
         }
         window.addEventListener('DOMContentLoaded', initRidershipPanel);
 
-        // 種別・系統判定ロジック
         function getRouteProperties(route) {
             const numStr = String(route.number || '').trim();
             const nameStr = String(route.name || '').trim();
-
             const hasKana = /[\u3040-\u309F\u30A0-\u30FF]/.test(numStr) || /[\u3040-\u309F\u30A0-\u30FF]/.test(nameStr);
 
             let speedWeight = 1.0;
             let fareCost = 1.0;
 
             if (hasKana) {
-                // 超特急・特急
-                speedWeight = 0.35;
-                fareCost = 3.0;
+                speedWeight = 0.35; fareCost = 3.0;
             } else {
                 const num = parseInt(numStr, 10);
                 if (!isNaN(num)) {
-                    if (num >= 700) {
-                        speedWeight = 0.5;
-                        fareCost = 2.0;
-                    } else if (num >= 650) {
-                        speedWeight = 0.75;
-                        fareCost = 1.5;
-                    } else {
-                        speedWeight = 1.0;
-                        fareCost = 1.0;
-                    }
+                    if (num >= 700) { speedWeight = 0.5; fareCost = 2.0; }
+                    else if (num >= 650) { speedWeight = 0.75; fareCost = 1.5; }
+                    else { speedWeight = 1.0; fareCost = 1.0; }
                 } else {
-                    if (nameStr.includes('超特急') || nameStr.includes('特急') || numStr.includes('特急')) {
-                        speedWeight = 0.35;
-                        fareCost = 3.0;
-                    } else if (nameStr.includes('急行') || nameStr.includes('快速')) {
-                        speedWeight = 0.5;
-                        fareCost = 2.0;
-                    } else if (nameStr.includes('準急')) {
-                        speedWeight = 0.75;
-                        fareCost = 1.5;
-                    }
+                    if (nameStr.includes('超特急') || nameStr.includes('特急') || numStr.includes('特急')) { speedWeight = 0.35; fareCost = 3.0; }
+                    else if (nameStr.includes('急行') || nameStr.includes('快速')) { speedWeight = 0.5; fareCost = 2.0; }
+                    else if (nameStr.includes('準急')) { speedWeight = 0.75; fareCost = 1.5; }
                 }
             }
             return { speedWeight, fareCost };
+        }
+
+        function isAirportStation(stId) {
+            if (!globalData || !globalData.stations || !globalData.stations[stId]) return false;
+            const pName = parseName(globalData.stations[stId].name).primary;
+            return pName.includes('空港');
         }
 
         function renderMtrMap(data) {
@@ -840,11 +877,11 @@
                 globalGraph[id] = [];
 
                 const marker = L.circleMarker(pos, {
-                    radius: 5, fillColor: '#ffffff', color: '#1a202c', weight: 2.5, opacity: 1, fillOpacity: 1, pane: 'stationsPane'
+                    radius: 5, fillColor: '#ffffff', color: '#1c1c1e', weight: 2.5, opacity: 1, fillOpacity: 1, pane: 'stationsPane'
                 });
                 marker.bindPopup(() => `
-                <div style="padding:4px;"><strong style="font-size:1.1rem; color:#1a202c;">${escapeHtml(nameInfo.primary)}</strong><br><span style="color:#718096; font-size:0.8rem;">${escapeHtml(nameInfo.sub)}</span>${buildRidershipHtml(station.name)}</div>
-            `);
+                    <div style="padding:4px;"><strong style="font-size:1.05rem; color:#1c1c1e;">${escapeHtml(nameInfo.primary)}</strong><br><span style="color:#8e8e93; font-size:0.78rem;">${escapeHtml(nameInfo.sub)}</span>${buildRidershipHtml(station.name)}</div>
+                `);
 
                 marker.bindTooltip(nameInfo.primary, {
                     permanent: false, direction: 'top', offset: [0, -6], className: 'leaflet-tooltip-custom'
@@ -900,8 +937,8 @@
                     }).addTo(routeLayerGroup);
 
                     polyline.bindPopup(`
-                    <div style="font-size:0.9rem;"><strong style="color:${hexColor};">${escapeHtml(nameInfo.primary)}</strong><br><span style="font-size:0.75rem; color:#718096;">${escapeHtml(nameInfo.sub)}</span></div>
-                `);
+                        <div style="font-size:0.88rem;"><strong style="color:${hexColor};">${escapeHtml(nameInfo.primary)}</strong><br><span style="font-size:0.75rem; color:#8e8e93;">${escapeHtml(nameInfo.sub)}</span></div>
+                    `);
 
                     routeFeaturesMap.push({
                         routeObj: route, fromId: fromId, toId: toId, polyline: polyline, color: hexColor, latlngs: segLatLngs
@@ -920,7 +957,7 @@
                 }
             });
 
-            // 同名駅・接続駅の徒歩エッジ追加
+            // 同名駅・接続駅徒歩エッジ
             const nameGroups = {};
             for (const id in stations) {
                 if (!globalGraph[id]) continue;
@@ -960,39 +997,29 @@
                 });
             }
 
-            // ★ 空港駅の検出と直行フライト（航空路）エッジの構築
+            // 空港間直行フライトエッジ
             const airportIds = [];
             for (const id in stations) {
                 if (!globalGraph[id]) continue;
-                const pName = parseName(stations[id].name).primary;
-                if (pName.includes('空港')) {
-                    airportIds.push(id);
-                }
+                if (isAirportStation(id)) airportIds.push(id);
             }
 
             for (let i = 0; i < airportIds.length; i++) {
                 for (let j = i + 1; j < airportIds.length; j++) {
-                    const idA = airportIds[i];
-                    const idB = airportIds[j];
-                    const p1 = stations[idA];
-                    const p2 = stations[idB];
+                    const idA = airportIds[i]; const idB = airportIds[j];
+                    const p1 = stations[idA]; const p2 = stations[idB];
                     if (!p1 || !p2) continue;
                     const dist = Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.z - p2.z, 2));
 
                     const flightRoute = {
                         number: '✈️ [航空便]',
-                        name: '航空路線||フライト',
-                        color: 0x00bfff, // Skyblue
+                        name: '航空路線||直行フライト',
+                        color: 0x00bfff,
                         isAirplane: true
                     };
 
-                    // 飛行機：特急(0.35)を凌駕する超速度(0.1)、特急(3.0)を遥かに超える高運賃(10.0)
-                    globalGraph[idA].push({
-                        to: idB, route: flightRoute, realDist: dist, speedWeight: 0.1, fareCost: 10.0, isAirplane: true
-                    });
-                    globalGraph[idB].push({
-                        to: idA, route: flightRoute, realDist: dist, speedWeight: 0.1, fareCost: 10.0, isAirplane: true
-                    });
+                    globalGraph[idA].push({ to: idB, route: flightRoute, realDist: dist, speedWeight: 0.1, fareCost: 10.0, isAirplane: true });
+                    globalGraph[idB].push({ to: idA, route: flightRoute, realDist: dist, speedWeight: 0.1, fareCost: 10.0, isAirplane: true });
                 }
             }
 
@@ -1012,17 +1039,17 @@
             const ids = [];
             for (let id in stations) {
                 const pName = parseName(stations[id].name).primary;
-                if (pName === targetName) {
-                    ids.push(id);
-                }
+                if (pName === targetName) ids.push(id);
             }
             return ids;
         }
 
-        // ── ダイクストラ探索（飛行機モード対応） ──
-        function findShortestPath(startIds, endIds, priorityMode, enableAirplane) {
+        // ダイクストラ探索（飛行機未指定時の空港除外機能付き）
+        function findShortestPath(startIds, endIds, priorityMode, enableAirplane, specifiedAirportIds) {
             if (!startIds || startIds.length === 0 || !endIds || endIds.length === 0) return null;
             const endSet = new Set(endIds);
+            const allowedAirports = specifiedAirportIds || new Set();
+
             let distances = {};
             let backtrace = {};
             let pq = [];
@@ -1062,8 +1089,11 @@
                 for (let edge of neighbors) {
                     if (edge.to === curr.lastStationId) continue;
 
-                    // ★ 飛行機モード無効時は飛行機エッジを判定から外す
-                    if (edge.isAirplane && !enableAirplane) continue;
+                    // ✈️ 飛行機指定がない場合：フライト無効 ＆ 明示指定のない空港駅を経由地から除外
+                    if (!enableAirplane) {
+                        if (edge.isAirplane) continue;
+                        if (isAirportStation(edge.to) && !allowedAirports.has(edge.to)) continue;
+                    }
 
                     const rKey = edge.isVirtual
                         ? edge.route.number
@@ -1081,24 +1111,15 @@
                     if (edge.isVirtual) {
                         edgeCost = edge.realDist;
                     } else if (edge.isAirplane) {
-                        // 飛行機専用の特別コスト計算
                         edgeCost = edge.realDist;
-                        if (priorityMode === 'fare') {
-                            edgeCost *= edge.fareCost; // 10.0 (非常に高く設定され回避されやすい)
-                        } else if (priorityMode === 'time') {
-                            edgeCost *= edge.speedWeight; // 0.1 (超高速のため優先的に選択)
-                        } else if (priorityMode === 'balanced') {
-                            edgeCost *= Math.pow(edge.speedWeight, 1.1) * 1.8; // バランス型でのコスト調整
-                        }
+                        if (priorityMode === 'fare') edgeCost *= edge.fareCost;
+                        else if (priorityMode === 'time') edgeCost *= edge.speedWeight;
+                        else if (priorityMode === 'balanced') edgeCost *= Math.pow(edge.speedWeight, 1.1) * 1.8;
                     } else {
                         edgeCost = edge.realDist;
-                        if (priorityMode === 'fare') {
-                            edgeCost *= edge.fareCost;
-                        } else if (priorityMode === 'time') {
-                            edgeCost *= edge.speedWeight;
-                        } else if (priorityMode === 'balanced') {
-                            edgeCost *= Math.pow(edge.speedWeight, 1.1);
-                        }
+                        if (priorityMode === 'fare') edgeCost *= edge.fareCost;
+                        else if (priorityMode === 'time') edgeCost *= edge.speedWeight;
+                        else if (priorityMode === 'balanced') edgeCost *= Math.pow(edge.speedWeight, 1.1);
                     }
 
                     let transferPenalty = 0;
@@ -1109,23 +1130,14 @@
                         else transferPenalty = 2000;
 
                         let checkRoutes = new Set(curr.usedRoutes);
-                        if (curr.lastRouteKey !== 'NONE' && !isCurrVirtual) {
-                            checkRoutes.add(curr.lastRouteKey);
-                        }
-                        if (checkRoutes.has(rKey)) {
-                            transferPenalty += 300000;
-                        }
+                        if (curr.lastRouteKey !== 'NONE' && !isCurrVirtual) checkRoutes.add(curr.lastRouteKey);
+                        if (checkRoutes.has(rKey)) transferPenalty += 300000;
                     }
 
-                    // 飛行機搭乗ロスタイム（搭乗手続き相当のペナルティ）
-                    if (edge.isAirplane) {
-                        transferPenalty += 800;
-                    }
+                    if (edge.isAirplane) transferPenalty += 800;
 
                     let nextUsedRoutes = new Set(curr.usedRoutes);
-                    if (curr.lastRouteKey !== 'NONE' && !isCurrVirtual) {
-                        nextUsedRoutes.add(curr.lastRouteKey);
-                    }
+                    if (curr.lastRouteKey !== 'NONE' && !isCurrVirtual) nextUsedRoutes.add(curr.lastRouteKey);
 
                     let newCost = curr.cost + edgeCost + transferPenalty;
                     const nextKey = edge.to + '_' + rKey;
@@ -1163,16 +1175,23 @@
         }
 
         function findRouteWithWaypoint(startIds, waypointIds, endIds, priorityMode, enableAirplane) {
+            // 出発地・経由地・目的地として明示指定された空港IDを集約
+            const specifiedAirports = new Set([
+                ...startIds.filter(isAirportStation),
+                ...waypointIds.filter(isAirportStation),
+                ...endIds.filter(isAirportStation)
+            ]);
+
             if (!waypointIds || waypointIds.length === 0) {
-                return findShortestPath(startIds, endIds, priorityMode, enableAirplane);
+                return findShortestPath(startIds, endIds, priorityMode, enableAirplane, specifiedAirports);
             }
-            let part1 = findShortestPath(startIds, waypointIds, priorityMode, enableAirplane);
+            let part1 = findShortestPath(startIds, waypointIds, priorityMode, enableAirplane, specifiedAirports);
             if (!part1 || part1.length === 0) return null;
 
             let lastStep = part1[part1.length - 1];
             let reachedWaypointId = lastStep.to;
 
-            let part2 = findShortestPath([reachedWaypointId], endIds, priorityMode, enableAirplane);
+            let part2 = findShortestPath([reachedWaypointId], endIds, priorityMode, enableAirplane, specifiedAirports);
             if (!part2 || part2.length === 0) return null;
 
             return part1.concat(part2);
@@ -1199,19 +1218,19 @@
             const endIds = getStationIdsByName(endName);
 
             if (startIds.length === 0 || endIds.length === 0) {
-                resultsEl.innerHTML = `<p style="color:#e53e3e; font-size:0.85rem; text-align:center;">⚠️ 指定された駅が見つかりませんでした。</p>`;
+                resultsEl.innerHTML = `<p style="color:#ff3b30; font-size:0.8rem; text-align:center;">⚠️ 指定された駅が見つかりませんでした。</p>`;
                 resetRouteHighlight();
                 return;
             }
 
             const path = findRouteWithWaypoint(startIds, waypointIds, endIds, priorityMode, enableAirplane);
             if (!path || path.length === 0) {
-                resultsEl.innerHTML = `<p style="color:#e53e3e; font-size:0.85rem; text-align:center;">⚠️ 指定された条件、または除外系統を回避するルートが見つかりませんでした。</p>`;
+                resultsEl.innerHTML = `<p style="color:#ff3b30; font-size:0.8rem; text-align:center;">⚠️ 指定された条件に該当するルートが見つかりませんでした。</p>`;
                 resetRouteHighlight();
                 return;
             }
 
-            routeFeaturesMap.forEach(seg => seg.polyline.setStyle({ color: '#3f3f46', weight: 3, opacity: 0.15 }));
+            routeFeaturesMap.forEach(seg => seg.polyline.setStyle({ color: '#8e8e93', weight: 3, opacity: 0.15 }));
             virtualHighlightLayers.forEach(layer => routeLayerGroup.removeLayer(layer));
             virtualHighlightLayers = [];
 
@@ -1221,14 +1240,13 @@
                     const p2 = globalStationCoords[step.to];
                     if (p1 && p2) {
                         const dashLine = L.polyline([p1, p2], {
-                            color: '#ecc94b', weight: 4, opacity: 0.9, dashArray: '6, 8'
+                            color: '#ffcc00', weight: 4, opacity: 0.9, dashArray: '6, 8'
                         }).addTo(routeLayerGroup);
                         dashLine.bringToFront();
                         virtualHighlightLayers.push(dashLine);
                     }
                     return;
                 }
-                // ★ 飛行機ハイライト描画
                 if (step.route.isAirplane) {
                     const p1 = globalStationCoords[step.from];
                     const p2 = globalStationCoords[step.to];
@@ -1253,11 +1271,11 @@
             });
 
             let html = `
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                <h4 style="margin:0; font-size:0.9rem; color:#1a202c;">🔍 探索完了ルート</h4>
-                <button onclick="resetRouteHighlight()" style="cursor:pointer; background:#edf2f7; border:none; padding:4px 10px; border-radius:4px; font-size:0.75rem; font-weight:bold;">クリア</button>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <h4 style="margin:0; font-size:0.88rem; color:var(--text-main);">🔍 検索結果</h4>
+                <button onclick="resetRouteHighlight()" style="cursor:pointer; background:rgba(120,120,128,0.12); border:none; padding:4px 10px; border-radius:6px; font-size:0.75rem; font-weight:600;">クリア</button>
             </div>
-        `;
+            `;
             let segments = [];
 
             path.forEach((step) => {
@@ -1301,29 +1319,27 @@
 
             segments.forEach((seg, idx) => {
                 if (seg.type === 'virtual') {
-                    const label = seg.virtualType === 'sameName'
-                        ? '同名の別駅として乗換'
-                        : '乗換接続駅を利用して乗換';
-                    html += `<div class="transfer-node" style="background:#fffceb; border-left:3px solid #ecc94b;">🔀 ${escapeHtml(seg.startStation)} → ${escapeHtml(seg.endStation)}（${label}）</div>`;
+                    const label = seg.virtualType === 'sameName' ? '同名駅間の徒歩移動' : '接続構造での徒歩移動';
+                    html += `<div class="transfer-node">🚶‍♂️ ${escapeHtml(seg.startStation)} → ${escapeHtml(seg.endStation)}（${label}）</div>`;
                     return;
                 }
                 if (seg.type === 'airplane') {
                     html += `
-                    <div class="result-card" style="border-left: 6px solid #00bfff; background: #f0f9ff;">
-                        <strong style="color:#0284c7; font-size:0.9rem;">✈️ 航空便 (直行フライト)</strong>
-                        <div style="margin-top:4px; font-size:0.85rem; color:#0369a1; font-weight:bold;">${escapeHtml(seg.startStation)} ➔ ${escapeHtml(seg.endStation)}</div>
-                        <div style="font-size:0.75rem; color:#0284c7; margin-top:4px;">⚡ 空港間を直線移動 (最速・高運賃)</div>
+                    <div class="result-card" style="border-left: 5px solid #00bfff; background: rgba(0, 191, 255, 0.05);">
+                        <strong style="color:#0080ff; font-size:0.88rem;">✈️ 航空便 (直行フライト)</strong>
+                        <div style="margin-top:4px; font-size:0.82rem; font-weight:600;">${escapeHtml(seg.startStation)} ➔ ${escapeHtml(seg.endStation)}</div>
+                        <div style="font-size:0.72rem; color:var(--text-sub); margin-top:2px;">⚡ 空港間高速移動</div>
                     </div>`;
                     return;
                 }
                 if (idx > 0 && segments[idx - 1].type === 'ride') {
-                    html += `<div class="transfer-node">🚶‍♂️ ${escapeHtml(seg.startStation)} 駅で乗り換え</div>`;
+                    html += `<div class="transfer-node">🔀 ${escapeHtml(seg.startStation)} 駅で乗り換え</div>`;
                 }
                 html += `
-                <div class="result-card" style="border-left: 6px solid ${seg.color};">
-                    <strong style="color:#1a202c; font-size:0.9rem;">${escapeHtml(seg.routeDisp)}</strong>
-                    <div style="margin-top:4px; font-size:0.85rem; color:#4a5568;">${escapeHtml(seg.startStation)} ➔ ${escapeHtml(seg.endStation)}</div>
-                    <div style="font-size:0.75rem; color:#718096; margin-top:4px;">⏱️ ${seg.count} 駅間を移動</div>
+                <div class="result-card" style="border-left: 5px solid ${seg.color};">
+                    <strong style="color:var(--text-main); font-size:0.88rem;">${escapeHtml(seg.routeDisp)}</strong>
+                    <div style="margin-top:4px; font-size:0.82rem; color:var(--text-main); font-weight:500;">${escapeHtml(seg.startStation)} ➔ ${escapeHtml(seg.endStation)}</div>
+                    <div style="font-size:0.72rem; color:var(--text-sub); margin-top:2px;">⏱️ ${seg.count} 駅間移動</div>
                 </div>`;
             });
             resultsEl.innerHTML = html;
@@ -1338,8 +1354,8 @@
 
         function toggleRouteExclude(encodedKey, checked) {
             const routeKey = decodeURIComponent(encodedKey);
-            if (checked) { excludedRoutes.add(routeKey); }
-            else { excludedRoutes.delete(routeKey); }
+            if (checked) excludedRoutes.add(routeKey);
+            else excludedRoutes.delete(routeKey);
             saveExcludedRoutes();
         }
 
@@ -1372,20 +1388,19 @@
                 if (isMatch || isChecked) {
                     const encKey = encodeURIComponent(key);
                     excludeHtml += `
-                    <label class="exclude-item" style="display:flex; align-items:center; margin-bottom:6px; cursor:pointer;">
-                        <input type="checkbox" ${isChecked ? "checked" : ""} onchange="toggleRouteExclude('${encKey}', this.checked)">
-                        <span style="display:inline-block; width:12px; height:12px; background-color:${hexColor}; border-radius:3px; margin-right:6px; flex-shrink:0; border:1px solid rgba(0,0,0,0.15);"></span>
-                        <span style="font-size:0.8rem; line-height:1.2;">
+                    <label style="display:flex; align-items:center; margin-bottom:6px; cursor:pointer;">
+                        <input type="checkbox" ${isChecked ? "checked" : ""} onchange="toggleRouteExclude('${encKey}', this.checked)" style="margin-right:6px;">
+                        <span style="display:inline-block; width:10px; height:10px; background-color:${hexColor}; border-radius:3px; margin-right:6px; flex-shrink:0;"></span>
+                        <span style="font-size:0.78rem; line-height:1.2;">
                             <strong>${escapeHtml(lineName)}</strong>
-                            ${typeDisp ? `<span style="color:#2b6cb0; font-weight:bold; margin-left:4px;">${escapeHtml(typeDisp)}</span>` : ''}
-                            ${subText ? `<span style="color:#718096; font-size:0.72rem; margin-left:4px;">${escapeHtml(subText)}</span>` : ''}
+                            ${typeDisp ? `<span style="color:var(--primary-accent); margin-left:4px;">${escapeHtml(typeDisp)}</span>` : ''}
                         </span>
                     </label>
                 `;
                 }
             });
 
-            container.innerHTML = excludeHtml || '<span style="color:#a0aec0;font-size:0.75rem;">該当する系統がありません</span>';
+            container.innerHTML = excludeHtml || '<span style="color:var(--text-sub);font-size:0.75rem;">該当する系統はありません</span>';
         }
 
         function switchTab(tab) {
@@ -1395,6 +1410,31 @@
             document.getElementById('tab-search').classList.toggle('active', tab === 'search');
             document.getElementById('search-box-wrapper').style.display = (tab === 'search') ? 'none' : 'block';
             resetRouteHighlight(); updateSidebarList();
+        }
+
+        // 路線カードアコーディオン開閉
+        function toggleRouteTimeline(index, routeObj) {
+            const timelineEl = document.getElementById(`timeline-${index}`);
+            if (!timelineEl) return;
+
+            const isOpen = timelineEl.classList.contains('open');
+            document.querySelectorAll('.station-timeline').forEach(el => el.classList.remove('open'));
+
+            if (!isOpen) {
+                timelineEl.classList.add('open');
+                const points = [];
+                routeFeaturesMap.filter(seg => seg.routeObj === routeObj).forEach(seg => points.push(...seg.latlngs));
+                if (points.length > 0) map.fitBounds(L.latLngBounds(points).pad(0.2));
+            }
+        }
+
+        function focusStationFromTimeline(stationId, event) {
+            event.stopPropagation();
+            const m = stationMarkersMap[stationId];
+            if (m) {
+                map.setView(m.getLatLng(), 1);
+                m.openPopup();
+            }
         }
 
         function updateSidebarList() {
@@ -1414,13 +1454,13 @@
                         </select>
                     </div>
 
-                    <div class="search-form-group" style="margin-bottom:14px; background:#f0f9ff; padding:10px; border-radius:8px; border:1px solid #bae6fd;">
-                        <label style="display:flex; align-items:center; cursor:pointer; font-size:0.82rem; font-weight:bold; color:#0369a1; text-transform:none; margin:0;">
+                    <div class="search-form-group" style="margin-bottom:12px; background:rgba(0,122,255,0.06); padding:10px 12px; border-radius:var(--radius-sm); border:1px solid rgba(0,122,255,0.2);">
+                        <label style="display:flex; align-items:center; cursor:pointer; font-size:0.82rem; font-weight:600; color:var(--primary-accent); text-transform:none; margin:0;">
                             <input type="checkbox" id="enable-airplane" style="margin-right:8px; width:16px; height:16px; cursor:pointer;">
                             ✈️ 飛行機ルート（空港間フライト）を利用
                         </label>
-                        <div style="font-size:0.7rem; color:#0284c7; margin-left:24px; margin-top:3px; line-height:1.3;">
-                            ※「〇〇空港」駅同士を直線フライトで結びます (超高速/高運賃)。
+                        <div style="font-size:0.7rem; color:var(--text-sub); margin-left:24px; margin-top:3px; line-height:1.3;">
+                            ※オフの場合、空港駅を経由する乗換ルートも除外されます。
                         </div>
                     </div>
 
@@ -1428,14 +1468,14 @@
                     <div class="search-form-group"><label>📍 経由駅 (任意)</label><input type="text" id="route-waypoint" list="stations-datalist" class="search-box" placeholder="経由させたい駅名を入力..."></div>
                     <div class="search-form-group"><label>🚉 到着駅</label><input type="text" id="route-end" list="stations-datalist" class="search-box" placeholder="到着駅名を入力..."></div>
                     
-                    <div class="search-form-group" style="margin-top:14px;">
+                    <div class="search-form-group" style="margin-top:12px;">
                         <label>⚠️ 運休・除外系統の設定</label>
                         <input type="text" class="exclude-search" placeholder="路線名・種別で絞り込み..." oninput="filterExcludeList(this.value)" value="${lastExcludeQuery}">
                         <div class="exclude-container" id="exclude-list-container"></div>
                     </div>
 
-                    <button onclick="executeRouteSearch()" class="search-btn" style="margin-top:8px;">🔍 最適ルート探索を開始</button>
-                    <div id="search-results" style="margin-top:16px;"></div>
+                    <button onclick="executeRouteSearch()" class="search-btn" style="margin-top:6px;">🔍 Route Search</button>
+                    <div id="search-results" style="margin-top:14px;"></div>
                 </div>`;
                 filterExcludeList(lastExcludeQuery);
                 return;
@@ -1444,18 +1484,55 @@
             if (currentTab === 'routes') {
                 const uniqueRoutes = []; const seen = new Set();
                 routeFeaturesMap.forEach(r => { if (!seen.has(r.routeObj)) { seen.add(r.routeObj); uniqueRoutes.push(r); } });
+                
                 const filtered = uniqueRoutes.filter(r => r.routeObj.name.toLowerCase().includes(searchQuery));
 
-                if (filtered.length === 0) { listContent.innerHTML = '<p style="text-align:center; color:#a0aec0; font-size:0.85rem;">該当する路線はありません</p>'; return; }
+                // 🔢 系統番号（1, 2, 10, A1...）の数値・自然順ソート
+                filtered.sort((a, b) => {
+                    const numA = String(a.routeObj.number || '').trim();
+                    const numB = String(b.routeObj.number || '').trim();
+                    return numA.localeCompare(numB, undefined, { numeric: true, sensitivity: 'base' });
+                });
 
-                filtered.forEach(r => {
-                    const item = document.createElement('div'); item.className = 'list-item route-item'; item.style.borderLeftColor = r.color;
+                if (filtered.length === 0) { listContent.innerHTML = '<p style="text-align:center; color:var(--text-sub); font-size:0.85rem; margin-top:20px;">該当する路線はありません</p>'; return; }
+
+                filtered.forEach((r, idx) => {
+                    const item = document.createElement('div');
+                    item.className = 'list-item route-item';
+                    item.style.borderLeftColor = r.color;
                     const parsed = parseName(r.routeObj.name);
-                    item.innerHTML = `<div class="item-title">${escapeHtml(parsed.primary)}</div><div class="item-sub">${escapeHtml(parsed.sub) || 'MTR 路線系統'}</div>`;
-                    item.onclick = () => {
-                        const points = []; routeFeaturesMap.filter(seg => seg.routeObj === r.routeObj).forEach(seg => points.push(...seg.latlngs));
-                        if (points.length > 0) map.fitBounds(L.latLngBounds(points).pad(0.2));
-                    };
+                    const numStr = String(r.routeObj.number || '').trim();
+
+                    // 停車駅リストの作成
+                    let timelineHtml = '';
+                    if (r.routeObj.stations && r.routeObj.stations.length > 0) {
+                        timelineHtml = `<div class="station-timeline" id="timeline-${idx}">`;
+                        r.routeObj.stations.forEach(stKey => {
+                            const stId = stKey.split('_')[0];
+                            const stObj = globalData.stations[stId];
+                            if (stObj) {
+                                const stParsed = parseName(stObj.name);
+                                timelineHtml += `
+                                    <div class="timeline-row" onclick="focusStationFromTimeline('${stId}', event)">
+                                        <div class="timeline-bullet" style="border-color:${r.color};"></div>
+                                        <div class="timeline-name">${escapeHtml(stParsed.primary)}</div>
+                                    </div>
+                                `;
+                            }
+                        });
+                        timelineHtml += `</div>`;
+                    }
+
+                    item.innerHTML = `
+                        <div class="item-title">
+                            <span>${escapeHtml(parsed.primary)}</span>
+                            ${numStr ? `<span style="font-size:0.75rem; color:var(--primary-accent); background:rgba(0,122,255,0.1); padding:2px 6px; border-radius:4px;">${escapeHtml(numStr)}</span>` : ''}
+                        </div>
+                        <div class="item-sub">${escapeHtml(parsed.sub) || 'MTR 路線系統'}</div>
+                        ${timelineHtml}
+                    `;
+
+                    item.onclick = () => toggleRouteTimeline(idx, r.routeObj);
                     listContent.appendChild(item);
                 });
             } else {
@@ -1464,11 +1541,11 @@
                 for (const id in stations) { arr.push({ id, ...stations[id], parsed: parseName(stations[id].name) }); }
                 const filtered = arr.filter(s => s.name.toLowerCase().includes(searchQuery)).sort((a, b) => a.parsed.primary.localeCompare(b.parsed.primary, 'ja'));
 
-                if (filtered.length === 0) { listContent.innerHTML = '<p style="text-align:center; color:#a0aec0; font-size:0.85rem;">該当する駅はありません</p>'; return; }
+                if (filtered.length === 0) { listContent.innerHTML = '<p style="text-align:center; color:var(--text-sub); font-size:0.85rem; margin-top:20px;">該当する駅はありません</p>'; return; }
 
                 filtered.forEach(s => {
                     const item = document.createElement('div'); item.className = 'list-item';
-                    item.innerHTML = `<div class="item-title">${escapeHtml(s.parsed.primary)}</div><div class="item-sub">X: ${s.x} / Z: ${s.z}</div>${buildRidershipHtml(s.name)}`;
+                    item.innerHTML = `<div class="item-title"><span>${escapeHtml(s.parsed.primary)}</span></div><div class="item-sub">X: ${s.x} / Z: ${s.z}</div>${buildRidershipHtml(s.name)}`;
                     item.onclick = () => { const m = stationMarkersMap[s.id]; if (m) { map.setView(m.getLatLng(), 1); m.openPopup(); } };
                     listContent.appendChild(item);
                 });
